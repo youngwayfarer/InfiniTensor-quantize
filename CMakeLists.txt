@@ -1,3 +1,5 @@
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Do not change these options in this file. Use cmake.config, cmake -DOPTION=VALUE, or ccmake to specify them.
 option(USE_CUDA "Support CUDA GPU" OFF)
 option(USE_BANG "Support BANG MLU" OFF)
@@ -9,6 +11,12 @@ option(USE_PROTOBUF "Serialize and deserialize tensors" OFF)
 option(BUILD_NNET "Build nnet" OFF)
 option(BUILD_DIST "Build project for distributed running" OFF)
 option(BUILD_TEST "Build tests" OFF)
+
+set(CMAKE_C_COMPILER "/home/kerr1gan/anaconda3/envs/infini-venv/bin/gcc")
+set(CMAKE_CXX_COMPILER "/home/kerr1gan/anaconda3/envs/infini-venv/bin/g++")
+
+include_directories("/home/kerr1gan/anaconda3/envs/infini-venv/include")
+link_directories("/home/kerr1gan/anaconda3/envs/infini-venv/lib")
 
 if(USE_CUDA)
     message("CMake 3.18 or higher is required for setting CUDAToolkit")
@@ -152,8 +160,10 @@ if(BUILD_NNET)
   set_source_files_properties(src/nnet/test.cc PROPERTIES COMPILE_OPTIONS "-DINFINI_PROJECT_HOME=${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
 
+# add conv conv3d in CUDA
 if(USE_CUDA)
-  file(GLOB_RECURSE SRC_CUDA src/cuda/*.cc src/cuda/*.cu)
+  file(GLOB_RECURSE SRC_CUDA src/cuda/*.cc src/cuda/*.cu src/kernels/cuda/conv.cc src/kernels/cuda/unary.cc src/kernels/cuda/unary.cu src/kernels/cuda/element_wise.cc src/kernels/cuda/element_wise.cu src/kernels/cuda/split_concat.cc src/kernels/cuda/split_concat.cu src/kernels/cuda/resize.cu src/kernels/cuda/resize.cc src/kernels/cuda/transpose.cu src/kernels/cuda/transpose.cc src/kernels/cuda/softmax.cu src/kernels/cuda/softmax.cc src/kernels/cuda/pad_slice.cu src/kernels/cuda/pad_slice.cc src/kernels/cuda/gather.cu src/kernels/cuda/gather.cc)
+  # file(GLOB_RECURSE SRC_CUDA src/cuda/*.cc src/cuda/*.cu src/kernels/cuda/conv.cc)
   list (APPEND SRC ${SRC_CUDA})
 endif()
 
@@ -182,6 +192,9 @@ add_library(InfiniTensor SHARED ${SRC})
 if(USE_PROTOBUF)
   target_link_libraries(InfiniTensor tensor_proto)
 endif()
+
+# oneDNN
+target_link_libraries(InfiniTensor /home/kerr1gan/anaconda3/envs/infini-venv/lib/libdnnl.so)
 
 target_link_libraries(InfiniTensor pybind11::embed)
 
@@ -244,10 +257,15 @@ if(USE_CUDA)
       ${CMAKE_CXX_COMPILER}
       CACHE STRING "Set cuda host compiler path")
   # CMP0104 requires CUDA_ARCHITECTURES
-  set_target_properties(InfiniTensor PROPERTIES CUDA_ARCHITECTURES "70;80")
+  # set_target_properties(InfiniTensor PROPERTIES CUDA_ARCHITECTURES "70;80")
+  set_target_properties(InfiniTensor PROPERTIES CUDA_ARCHITECTURES "86")
   enable_language(CUDA)
   find_package(CUDAToolkit) # For nvrtc and cuda driver
-  target_link_libraries(InfiniTensor cudnn CUDA::curand CUDA::cublas CUDA::nvrtc CUDA::cudart CUDA::cuda_driver)
+  # fix error: cannot find ludnn
+  set(CUDNN_INCLUDE_DIR /usr/local/cuda-11.8/include)
+  set(CUDNN_LIBRARY /usr/local/cuda-11.8/lib64/libcudnn.so.8)
+  # target_link_libraries(InfiniTensor cudnn CUDA::curand CUDA::cublas CUDA::nvrtc CUDA::cudart CUDA::cuda_driver)
+  target_link_libraries(InfiniTensor ${CUDNN_LIBRARY} CUDA::curand CUDA::cublas CUDA::nvrtc CUDA::cudart CUDA::cuda_driver)
   if (BUILD_DIST)
     message(STATUS "Add BUILD_DIST, use NCCL with CUDA")
     list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
@@ -401,7 +419,8 @@ if(BUILD_TEST)
   # some dataType maybe not support in infiniop, so we skip temporarily
     # build_test(test/core/*.cc)
     # build_test(test/operators/*.cc)
-    build_test(test/kernels/infiniop/*.cc)
+    # build_test(test/kernels/infiniop/*.cc)
+    build_test(test/core_mixed/*.cc)
   endif()
   if(BUILD_TEST_PET)
     build_test(test/pet/*.cc)

@@ -1,12 +1,16 @@
 #include "cuda/cuda_runtime.h"
+#include "core/common.h"
 #include "core/kernel.h"
+#include "core/op_type.h"
 #include "core/perf_engine.h"
 #include "core/runtime.h"
+#include "core/simple_op_perf_db.h"
+#include <chrono>
+#include <cstddef>
+#include <string>
 #ifdef INFINI_USE_NCCL
 #include "cuda/nccl_communicator.h"
 #endif
-#include "operators/conv.h"
-#include "operators/matmul.h"
 
 void CHECK_CUDA_KERNEL_ERROR(infini::Operator op) {
     cudaError_t kernelError = cudaGetLastError();
@@ -19,11 +23,50 @@ void CHECK_CUDA_KERNEL_ERROR(infini::Operator op) {
 }
 
 namespace infini {
-void CudaRuntimeObj::runWithoutSync(const Graph &graph) const {
+void CudaRuntimeObj::runWithoutSync(const Graph &graph, bool calibrate, bool loss_pass, bool quantized) const {
+    // std::cout << "=====================" << std::endl;
+
+    graph->setConvPass(false);
+    graph->set_run_time(0);
+    IT_ASSERT(graph->get_run_time() == 0);
+
+    double r_time = 0;
+
     const auto &kernelRegistry = KernelRegistry::getInstance();
     auto &perfEngine = PerfEngine::getInstance();
     for (auto &op : graph->getOperators()) {
         // HACK: set correct data type
+
+        //* calibrate, record range
+        if (calibrate) {
+            // if (op->getOpType() == OpType::Conv || op->getOpType() == OpType::Mul) {
+            if (graph->inQuantizedOps(op->getOpType())) {
+                for (auto input : op->getInputs()) {
+                    // 这里认为权重的range一定不为0，只更新一次
+                    if (input->isWeight() && input->getRange() != 0) {
+                        continue;
+                    }
+                    input->updateRange();
+                    // std::cout << "calibrate: " << op->getOpType().toString()
+                    //           << std::endl;
+                    // std::cout << "input range: " << input->getRange();
+                }
+            }
+        }
+
+        //* loss pass
+        //* for conv, mul: calculate the loss of op of (w, a)
+        if (loss_pass) {
+            // if (op->getOpType() == OpType::Conv ||
+            //     op->getOpType() == OpType::Mul) {
+            if (graph->inQuantizedOps(op->getOpType())) {
+                op->computeLoss();
+            }
+        }
+
+        auto start = std::chrono::high_resolution_clock::now();
+        auto end = std::chrono::high_resolution_clock::now();
+
         auto kernelAttrs = KernelAttrs{device, op->getOpType().underlying()};
         Kernel *kernel = kernelRegistry.getKernel(kernelAttrs);
         auto perfKey = PerfEngine::Key{kernelAttrs, op->getOpPerfKey()};
@@ -33,8 +76,114 @@ void CudaRuntimeObj::runWithoutSync(const Graph &graph) const {
             ComputeFuncPtr funcPtr = kernel->getComputeFunc(perfKey);
             funcPtr(op, perfData, this);
         } else {
+            start = std::chrono::high_resolution_clock::now();
             kernel->compute(op, this);
+            end = std::chrono::high_resolution_clock::now();
         }
+        checkCudaError(cudaGetLastError()) << op->toString();
+
+        auto duration =
+            std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        double kernel_time = duration.count() / 1000000.0;
+        r_time += kernel_time;
+
+
+        if (calibrate) {
+            // if (op->getOpType() == OpType::Conv || op->getOpType() == OpType::Mul) {
+            if (graph->inQuantizedOps(op->getOpType())) {
+                for (auto output : op->getOutputs()) {
+                    output->updateRange();
+                }
+            }
+        }
+
+        // if (!calibrate && !loss_pass) {
+        //     auto t = op->getOpType();
+        //     std::cout << "op type: " << t.toString() << std::endl;
+        //     if (t == OpType::Conv) {
+        //         std::cout << "weight shape: " << op->getInputs(1)->getDims()[0]
+        //                   << " " << op->getInputs(1)->getDims()[1] << " "
+        //                   << op->getInputs(1)->getDims()[2] << " "
+        //                   << op->getInputs(1)->getDims()[3] << std::endl;
+        //     }
+        //     std::cout << "datatype: " << op->getDType().toString() << std::endl;
+        //     std::cout << "op, kernel time: " << duration.count() << std::endl;
+        //     std::cout << std::endl;
+        // }
+    }
+
+    graph->set_run_time(r_time);
+}
+
+void CudaRuntimeObj::simulatedRun(const Graph &graph) const {
+    graph->setConvPass(false);
+    const auto &kernelRegistry = KernelRegistry::getInstance();
+    for (auto &op : graph->getOperators()) {
+        // if (op->getOpType() == OpType::Conv || op->getOpType() == OpType::Mul) {
+        if (graph->inQuantizedOps(op->getOpType())) {
+            op->simulatedInput();
+        }
+
+        auto kernelAttrs = KernelAttrs{device, op->getOpType().underlying()};
+        Kernel *kernel = kernelRegistry.getKernel(kernelAttrs);
+
+        kernel->compute(op, this);
+
+        checkCudaError(cudaGetLastError()) << op->toString();
+    }
+}
+
+void CudaRuntimeObj::record_perf_pass(const Graph &graph) const {
+    graph->setConvPass(false);
+    const auto &kernelRegistry = KernelRegistry::getInstance();
+    auto &perfDb = SimpleOpPerfDB::getInstance();
+
+    std::string perfFilePath =
+        "/home/kerr1gan/InfiniTensor/InfiniTensor/perf.json";
+
+    std::ifstream testFile(perfFilePath);
+    if (testFile.good()) {
+        testFile.close();
+        std::cout << "正在加载已有的性能数据..." << std::endl;
+        perfDb.loadFromFile(perfFilePath);
+    }
+
+    for (auto &op : graph->getOperators()) {
+        auto kernelAttrs = KernelAttrs{device, op->getOpType().underlying()};
+        Kernel *kernel = kernelRegistry.getKernel(kernelAttrs);
+
+        auto start = std::chrono::high_resolution_clock::now();
+
+        kernel->compute(op, this);
+
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration =
+            std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+        std::string opType = op->getOpType().toString();
+        std::string dataType = op->getDType().toString();
+        DeviceType deviceType =
+            (device == Device::CPU) ? DeviceType::CPU : DeviceType::CUDA;
+        float timeMus = static_cast<float>(duration.count());
+        perfDb.addRecord(opType, dataType, deviceType, timeMus);
+
+        checkCudaError(cudaGetLastError()) << op->toString();
+    }
+    perfDb.saveToFile(perfFilePath);
+    std::cout
+        << "性能测试完成，结果已保存到~/InfiniTensor/InfiniTensor/perf.json文件"
+        << std::endl;
+}
+
+void CudaRuntimeObj::conv_pass(const Graph &graph) const {
+    graph->setConvPass(true);
+    const auto &kernelRegistry = KernelRegistry::getInstance();
+    for (auto &op : graph->getOperators()) {
+        auto kernelAttrs = KernelAttrs{device, op->getOpType().underlying()};
+        Kernel *kernel = kernelRegistry.getKernel(kernelAttrs);
+
+        kernel->compute(op, this);
+
         checkCudaError(cudaGetLastError()) << op->toString();
     }
 }
@@ -99,13 +248,13 @@ void CudaRuntimeObj::tune(const Graph &graph, bool profiling = false) const {
 }
 
 void CudaRuntimeObj::run(const Graph &graph, bool runTune,
-                         bool profiling) const {
+                         bool profiling, bool calibrate, bool loss_pass, bool quantized) const {
     if (profiling)
         IT_TODO_HALT();
     if (runTune)
         tune(graph, profiling);
     else
-        runWithoutSync(graph);
+        runWithoutSync(graph, calibrate, loss_pass, quantized);
     sync();
 }
 

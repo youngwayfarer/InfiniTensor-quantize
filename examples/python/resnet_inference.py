@@ -6,7 +6,7 @@ from pyinfinitensor.onnx import OnnxStub, backend
 import torchvision.models as models
 
 if __name__ == '__main__':
-    model_path = './resnet18.onnx'
+    model_path = './resnet18-inference.onnx'
     tv_model = models.resnet50(weights=None)
     input_shape = (1, 3, 224, 224)
     param = torch.rand(input_shape)

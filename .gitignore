@@ -47,4 +47,25 @@ build_debug/
 
 *.swp
 
-/operators/
+# .cache
+.cache/
+
+# compile_commands.json
+compile_commands.json
+
+tvm/
+
+operators/
+
+examples/python/
+
+examples/test/imagenet/
+
+*.pt
+
+1.cu
+2.cu
+cudnn_fp32_test
+cudnn_int8_test
+node_analysis.md
+todo.md

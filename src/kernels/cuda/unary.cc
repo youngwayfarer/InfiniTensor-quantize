@@ -1,8 +1,10 @@
 #include "operators/unary.h"
+#include "core/common.h"
 #include "cuda/cuda_kernel_wihtout_config.h"
 #include "cuda/cuda_runtime.h"
 #include "cuda/cuda_unary.h"
 #include "cuda/cuda_utility.h"
+#include <cstdint>
 
 namespace infini {
 
@@ -56,11 +58,37 @@ class CastCuda : public CudaKernelWithoutConfig {
                       op->getOutDType() == DataType::Int8);
             cast_kernel<float, int8_t>((float *)inputData, (int8_t *)outputData,
                                        num);
+            float s = op->getInputs(0)->getScale();
+            quantize_cast_kernel<float, int8_t>((float *)inputData, (int8_t *)outputData, num, s);
         } else if (op->getType() == CastType::Int82Float) {
             IT_ASSERT(op->getDType() == DataType::Int8 &&
                       op->getOutDType() == DataType::Float32);
             cast_kernel<int8_t, float>((int8_t *)inputData, (float *)outputData,
                                        num);
+        } else if (op->getType() == CastType::Int322Float) {
+            IT_ASSERT(op->getDType() == DataType::Int32 &&
+                      op->getOutDType() == DataType::Float32);
+            // cast_kernel<int32_t, float>((int32_t *)inputData,
+                                        // (float *)outputData, num);
+            float s = op->getOutput()->getOutputScale();
+            dequantize_cast_kernel<int32_t, float>((int32_t *)inputData, (float *)outputData, num, s);
+        // } else if (op->getType() == CastType::Int82Float16) {
+        //     IT_ASSERT(op->getDType() == DataType::Int8 &&
+        //               op->getOutDType() == DataType::Float16);
+        //     cast_kernel<int8_t, half>((int8_t *)inputData, (half *)outputData,
+        //                               num);
+        } else if (op->getType() == CastType::Float162Int8) {
+            IT_ASSERT(op->getDType() == DataType::Float16 &&
+                      op->getOutDType() == DataType::Int8);
+            float s = op->getInputs(0)->getScale();
+            quantize_fp16_cast_kernel<half, int8_t>((half *)inputData, (int8_t *)outputData, num, s);
+        } else if (op->getType() == CastType::Int322Float16) {
+            IT_ASSERT(op->getDType() == DataType::Int32 &&
+                      op->getOutDType() == DataType::Float16);
+            // cast_kernel<int32_t, half>((int32_t *)inputData,
+            //                            (half *)outputData, num);
+            float s = op->getOutput()->getOutputScale();
+            dequantize_cast_kernel<int32_t, half>((int32_t *)inputData, (half *)outputData, num, s);
         } else {
             IT_ASSERT(false);
         }
@@ -204,7 +232,7 @@ class TanhCudnn : public ActivationCudnn {
     }
 };
 
-REGISTER_KERNEL(Device::CUDA, OpType::Relu, ReluCudnn, "Relu_CUDA");
+// REGISTER_KERNEL(Device::CUDA, OpType::Relu, ReluCudnn, "Relu_CUDA");
 REGISTER_KERNEL(Device::CUDA, OpType::Sigmoid, SigmoidCudnn, "Sigmoid_CUDA");
 REGISTER_KERNEL(Device::CUDA, OpType::Elu, EluCuda, "Elu_CUDA");
 REGISTER_KERNEL(Device::CUDA, OpType::HardSigmoid, UnaryCuda,

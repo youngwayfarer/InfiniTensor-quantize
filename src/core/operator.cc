@@ -1,4 +1,5 @@
 #include "core/operator.h"
+#include "core/common.h"
 #include "core/graph.h"
 #include "core/hash.h"
 
@@ -30,6 +31,42 @@ void OperatorObj::removeSuccessors(const Operator &op) {
     }
 }
 
+// 暂时只考虑conv, mul
+// 2个输入
+void OperatorObj::computeLoss() {
+    // weight, activation
+    // 4~8
+    // IT_ASSERT(alpha <= 0.5);
+    IT_ASSERT(alpha <= 1);
+    IT_ASSERT(alpha >= 0);
+    for (int w = 8; w >= 4; w--) {
+        for (int a = 8; a >= 4; a--) {
+            auto input_w = getInputs(1);
+            input_w->setBitsWidth(w);
+            float loss_w = input_w->getSimulatedLoss();
+            auto input_a = getInputs(0);
+            input_a->setBitsWidth(a);
+            float loss_a = input_a->getSimulatedLoss();
+
+            float loss;
+            if (input_w->isWeight()) {
+                loss = (1 - alpha) * loss_w + alpha * loss_a;
+            } else {
+                loss = 0.5 * loss_w + 0.5 * loss_a;
+            }
+
+            std::pair<int, int> keyToFind = {w, a};
+            auto it = bit_loss.find(keyToFind);
+            if (it != bit_loss.end()) {
+                it->second += loss;
+            } else {
+                bit_loss[keyToFind] = loss;
+            }
+        }
+    }
+    calibrateNumIncrement();
+}
+
 void OperatorObj::replaceInput(Tensor t1, Tensor t2) {
     for (auto itr = inputs.begin(); itr != inputs.end(); ++itr) {
         if (*itr == t1) {
@@ -58,12 +95,28 @@ HashType OperatorObj::hash() const {
 
 bool OperatorObj::checkValid(GraphObj *graph) {
     auto optShapes = inferShape();
-    if (!optShapes) // shape inference failed
+    if (!optShapes) { // shape inference failed
+        std::cout << "=====================" << std::endl;
+        std::cout << "=====================" << std::endl;
+        std::cout << "=====================" << std::endl;
+        std::cout << "Shape inference failed for " << std::endl;
+        std::cout << "=====================" << std::endl;
+        std::cout << "=====================" << std::endl;
+        std::cout << "=====================" << std::endl;
         return false;
+    }
 
     const vector<Shape> &shapes = *optShapes;
-    if (shapes.size() != outputs.size())
+    if (shapes.size() != outputs.size()) {
+        std::cout << "=====================" << std::endl;
+        std::cout << "=====================" << std::endl;
+        std::cout << "=====================" << std::endl;
+        std::cout << "Size not equal " << std::endl;
+        std::cout << "=====================" << std::endl;
+        std::cout << "=====================" << std::endl;
+        std::cout << "=====================" << std::endl;
         return false;
+    }
     if (graph) { // if graph != nullptr, outputs should be created
         auto dataTypes = inferDataType();
         for (size_t i = 0; i < outputs.size(); i++) {
@@ -73,8 +126,30 @@ bool OperatorObj::checkValid(GraphObj *graph) {
         initInfiniOp(graph->getRuntime());
     } else { // if outputs have been created, check their shapes
         for (size_t i = 0; i < shapes.size(); ++i) {
-            if (shapes[i] != outputs[i]->getDims())
+            if (shapes[i] != outputs[i]->getDims()) {
+                std::cout << "*********************" << std::endl;
+                std::cout << "*********************" << std::endl;
+                std::cout << "shapes[i]: " << std::endl;
+                for (auto s : shapes[i]) {
+                    std::cout << s << " ";
+                }
+                std::cout << std::endl;
+                std::cout << "outputs[i]->getDims(): " << std::endl;
+                for (auto s : outputs[i]->getDims()) {
+                    std::cout << s << " ";
+                }
+                std::cout << std::endl;
+                std::cout << "*********************" << std::endl;
+                std::cout << "*********************" << std::endl;
+                std::cout << "=====================" << std::endl;
+                std::cout << "=====================" << std::endl;
+                std::cout << "=====================" << std::endl;
+                std::cout << "Size not equal 222 " << std::endl;
+                std::cout << "=====================" << std::endl;
+                std::cout << "=====================" << std::endl;
+                std::cout << "=====================" << std::endl;
                 return false;
+            }
         }
     }
 

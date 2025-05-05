@@ -1,16 +1,412 @@
 #include "core/tensor.h"
 #include "core/blob.h"
+#include "core/common.h"
+#include "core/data_type.h"
 #include "core/operator.h"
 #include "core/runtime.h"
+#include "utils/data_convert.h"
 #include "utils/dataloader.h"
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <numeric>
+#include <vector>
 
 namespace infini {
 
 TensorObj::TensorObj(Shape shape_, DataType dtype, Runtime runtime)
     : TensorBaseObj(shape_.size(), dtype, runtime), shape(std::move(shape_)),
       _size(std::accumulate(shape.begin(), shape.end(), 1, std::multiplies{})) {
+}
+
+void TensorObj::updateRange() {
+    float max_val = 0;
+    if (dtype == DataType::Float32) {
+        std::vector<float> tensor_data = copyout<float>();
+        auto max_range = std::max_element(
+            tensor_data.begin(), tensor_data.end(),
+            [](float a, float b) { return std::abs(a) < std::abs(b); });
+        max_val = std::abs(*max_range);
+    } else if (dtype == DataType::Float16) {
+        std::vector<uint16_t> tensor_data = copyout<uint16_t>();
+        std::vector<float> data_float(tensor_data.size());
+        for (size_t i = 0; i < tensor_data.size(); ++i) {
+            data_float[i] = fp16_to_float(tensor_data[i]);
+        }
+        auto max_range = std::max_element(
+            data_float.begin(), data_float.end(),
+            [](float a, float b) { return std::abs(a) < std::abs(b); });
+        max_val = std::abs(*max_range);
+    } else {
+        IT_TODO_HALT();
+    }
+    // max
+    if (max_val > range) {
+        range = max_val;
+    }
+    // power2_range
+}
+
+float TensorObj::getSimulatedLoss() {
+    // setQuantizeScale();
+    float loss = 0;
+    if (dtype == DataType::Float32) {
+        std::vector<float> tensor_data = copyout<float>();
+        for (size_t i = 0; i < tensor_data.size(); i++) {
+            float temp = tensor_data[i] / scale;
+            // round
+            int t = static_cast<int>(std::rint(temp));
+            // clip
+            if (t + quantized_range < 0) {
+                t = -quantized_range;
+            }
+            if (t > quantized_range) {
+                t = quantized_range;
+            }
+            int8_t q_val = static_cast<int8_t>(t);
+            float dq_val = q_val * scale;
+            float val_loss = tensor_data[i] - dq_val;
+            val_loss = val_loss * val_loss;
+            loss += val_loss;
+        }
+        loss = loss / tensor_data.size();
+    } else if (dtype == DataType::Float16) {
+        std::vector<uint16_t> tensor_data = copyout<uint16_t>();
+        for (size_t i = 0; i < tensor_data.size(); i++) {
+            float data_fp32 = fp16_to_float(tensor_data[i]);
+            float temp = data_fp32 / scale;
+            // round
+            int t = static_cast<int>(std::rint(temp));
+            // clip
+            if (t + quantized_range < 0) {
+                t = -quantized_range;
+            }
+            if (t > quantized_range) {
+                t = quantized_range;
+            }
+            int8_t q_val = static_cast<int8_t>(t);
+            float dq_val = q_val * scale;
+            float val_loss = data_fp32 - dq_val;
+            val_loss = val_loss * val_loss;
+            loss += val_loss;
+        }
+        loss = loss / tensor_data.size();
+    } else {
+        IT_TODO_HALT();
+    }
+    return loss;
+}
+
+void TensorObj::simulatedQuantize() {
+    IT_ASSERT(scale != 0);
+    IT_ASSERT(bits_width != 0);
+    IT_ASSERT(quantized_range != 0);
+    if (dtype == DataType::Float32) {
+        std::vector<float> tensor_data = copyout<float>();
+        for (size_t i = 0; i < tensor_data.size(); i++) {
+            // float st = tensor_data[i];
+            float temp = tensor_data[i] / scale;
+            // round
+            int t = static_cast<int>(std::rint(temp));
+            // clip
+            if (t + quantized_range < 0) {
+                t = -quantized_range;
+            }
+            if (t > quantized_range) {
+                t = quantized_range;
+            }
+            int8_t q_val = static_cast<int8_t>(t);
+            tensor_data[i] = q_val * scale;
+        }
+        copyin(tensor_data);
+    } else if (dtype == DataType::Float16) {
+        std::vector<uint16_t> tensor_data = copyout<uint16_t>();
+        for (size_t i = 0; i < tensor_data.size(); i++) {
+            float data_fp32 = fp16_to_float(tensor_data[i]);
+            float temp = data_fp32 / scale;
+            // round
+            int t = static_cast<int>(std::rint(temp));
+            // clip
+            if (t + quantized_range < 0) {
+                t = -quantized_range;
+            }
+            if (t > quantized_range) {
+                t = quantized_range;
+            }
+            int8_t q_val = static_cast<int8_t>(t);
+            tensor_data[i] = float_to_fp16(q_val * scale);
+        }
+        copyin(tensor_data);
+    } else {
+        IT_TODO_HALT();
+    }
+}
+
+void TensorObj::quantize() {
+    IT_ASSERT(scale != 0);
+    IT_ASSERT(bits_width != 0);
+    IT_ASSERT(quantized == true);
+    if (dtype == DataType::Float32) {
+        std::vector<float> tensor_data = copyout<float>();
+        for (size_t i = 0; i < tensor_data.size(); i++) {
+            float temp = tensor_data[i] / scale;
+            // round
+            int t = static_cast<int>(std::rint(temp));
+            // clip
+            if (t + quantized_range < 0) {
+                t = -quantized_range;
+            }
+            if (t > quantized_range) {
+                t = quantized_range;
+            }
+            // int8_t q_val = static_cast<int8_t>(t);
+            // tensor_data[i] = q_val;
+            tensor_data[i] = t;
+        }
+        copyin(tensor_data);
+    } else if (dtype == DataType::Float16) {
+        // 暂时不存在这种情况
+        IT_TODO_HALT_MSG("only fp32 -> int8");
+        std::vector<uint16_t> tensor_data = copyout<uint16_t>();
+        for (size_t i = 0; i < tensor_data.size(); i++) {
+            float data_fp32 = fp16_to_float(tensor_data[i]);
+            float temp = data_fp32 / scale;
+            // round
+            int t = static_cast<int>(std::rint(temp));
+            // clip
+            if (t + quantized_range < 0) {
+                t = -quantized_range;
+            }
+            if (t > quantized_range) {
+                t = quantized_range;
+            }
+            // int8_t q_val = static_cast<int8_t>(t);
+            // tensor_data[i] = float_to_fp16(q_val);
+            tensor_data[i] = float_to_fp16(t);
+        }
+        copyin(tensor_data);
+    } else {
+        IT_TODO_HALT();
+    }
+}
+
+void TensorObj::deQuantize(float val) {
+    IT_ASSERT(quantized == true);
+    IT_ASSERT(scale != 0);
+    IT_ASSERT(bits_width != 0);
+    if (dtype == DataType::Float32) {
+        std::vector<float> tensor_data = copyout<float>();
+        for (size_t i = 0; i < tensor_data.size(); i++) {
+            // int8_t q_val = static_cast<int8_t>(tensor_data[i]);
+            // tensor_data[i] = q_val * scale;
+            // tensor_data[i] = tensor_data[i] * scale;
+            tensor_data[i] = tensor_data[i] * val;
+        }
+        copyin(tensor_data);
+    } else if (dtype == DataType::Float16) {
+        // 暂时不存在这种情况
+        IT_TODO_HALT_MSG("only int8 -> fp32");
+    } else {
+        IT_TODO_HALT();
+    }
+}
+
+void TensorObj::deQuantize() {
+    IT_ASSERT(output_scale != 0);
+    IT_ASSERT(quantized == true);
+    IT_ASSERT(scale != 0);
+    IT_ASSERT(bits_width != 0);
+    if (dtype == DataType::Float32) {
+        std::vector<float> tensor_data = copyout<float>();
+        for (size_t i = 0; i < tensor_data.size(); i++) {
+            tensor_data[i] = tensor_data[i] * output_scale;
+        }
+        copyin(tensor_data);
+    } else if (dtype == DataType::Float16) {
+        // 暂时不存在这种情况
+        IT_TODO_HALT_MSG("only int8 -> fp32");
+    } else {
+        IT_TODO_HALT();
+    }
+}
+
+void TensorObj::shape_NCHW2NHWC() {
+    IT_ASSERT(shape.size() == 4);
+    IT_ASSERT(dtype == DataType::Int8 || dtype == DataType::Int32);
+    Shape nchw_shape = shape;
+    Shape nhwc_shape = {nchw_shape[0], nchw_shape[2], nchw_shape[3],
+                        nchw_shape[1]};
+    shape = nhwc_shape;
+}
+
+void TensorObj::shape_NHWC2NCHW() {
+    IT_ASSERT(shape.size() == 4);
+    IT_ASSERT(dtype == DataType::Int8 || dtype == DataType::Int32);
+    Shape nhwc_shape = shape;
+    Shape nchw_shape = {nhwc_shape[0], nhwc_shape[3], nhwc_shape[1],
+                        nhwc_shape[2]};
+    shape = nchw_shape;
+}
+
+void TensorObj::data_NCHW2NHWC() {
+    // shape_NCHW2NHWC之后
+    IT_ASSERT(shape.size() == 4);
+    IT_ASSERT(dtype == DataType::Int8 || dtype == DataType::Int32);
+
+    if (dtype == DataType::Int8) {
+        std::vector<int8_t> old_data = copyout<int8_t>();
+        std::vector<int8_t> new_data(old_data.size());
+        int nn = shape[0];
+        int hh = shape[1];
+        int ww = shape[2];
+        int cc = shape[3];
+        int n_nchw_strides = hh * ww * cc;
+        int c_nchw_strides = hh * ww;
+        int h_nchw_strides = ww;
+        int n_nhwc_strides = hh * ww * cc;
+        int h_nhwc_strides = ww * cc;
+        int w_nhwc_strides = cc;
+        // int nchw_index = 0;
+        // int nhwc_index = 0;
+#pragma omp parallel for collapse(3)
+        for (int ni = 0; ni < nn; ni++) {
+            for (int hi = 0; hi < hh; hi++) {
+                for (int wi = 0; wi < ww; wi++) {
+                    int nhwc_base = ni * n_nhwc_strides + hi * h_nhwc_strides +
+                                    wi * w_nhwc_strides;
+                    int nchw_base = ni * n_nchw_strides + hi * h_nchw_strides + wi;
+                    for (int ci = 0; ci < cc; ci++) {
+                        // nchw_index =
+                        //     ni * hh * ww * cc + ci * hh * ww + hi * ww + wi;
+                        // nhwc_index =
+                        //     ni * hh * ww * cc + hi * ww * cc + wi * cc + ci;
+                        // new_data[nhwc_index] = old_data[nchw_index];
+                        new_data[nhwc_base + ci] =
+                            old_data[nchw_base + ci * c_nchw_strides];
+                    }
+                }
+            }
+        }
+        copyin(new_data);
+    } else if (dtype == DataType::Int32) {
+        std::vector<int32_t> old_data = copyout<int32_t>();
+        std::vector<int32_t> new_data(old_data.size());
+        int nn = shape[0];
+        int hh = shape[1];
+        int ww = shape[2];
+        int cc = shape[3];
+        int n_nchw_strides = hh * ww * cc;
+        int c_nchw_strides = hh * ww;
+        int h_nchw_strides = ww;
+        int n_nhwc_strides = hh * ww * cc;
+        int h_nhwc_strides = ww * cc;
+        int w_nhwc_strides = cc;
+        // int nchw_index = 0;
+        // int nhwc_index = 0;
+#pragma omp parallel for collapse(3)
+        for (int ni = 0; ni < nn; ni++) {
+            for (int hi = 0; hi < hh; hi++) {
+                for (int wi = 0; wi < ww; wi++) {
+                    int nhwc_base = ni * n_nhwc_strides + hi * h_nhwc_strides +
+                                    wi * w_nhwc_strides;
+                    int nchw_base = ni * n_nchw_strides + hi * h_nchw_strides + wi;
+                    for (int ci = 0; ci < cc; ci++) {
+                        // nchw_index =
+                        //     ni * hh * ww * cc + ci * hh * ww + hi * ww + wi;
+                        // nhwc_index =
+                        //     ni * hh * ww * cc + hi * ww * cc + wi * cc + ci;
+                        // new_data[nhwc_index] = old_data[nchw_index];
+                        new_data[nhwc_base + ci] =
+                            old_data[nchw_base + ci * c_nchw_strides];
+                    }
+                }
+            }
+        }
+        copyin(new_data);
+    } else {
+        IT_TODO_HALT();
+    }
+}
+
+void TensorObj::data_NHWC2NCHW() {
+    // shape_NHWC2NCHW之后
+    IT_ASSERT(shape.size() == 4);
+    IT_ASSERT(dtype == DataType::Int8 || dtype == DataType::Int32);
+
+    if (dtype == DataType::Int8) {
+        std::vector<int8_t> old_data = copyout<int8_t>();
+        std::vector<int8_t> new_data(old_data.size());
+        int nn = shape[0];
+        int cc = shape[1];
+        int hh = shape[2];
+        int ww = shape[3];
+        int n_nchw_strides = hh * ww * cc;
+        int c_nchw_strides = hh * ww;
+        int h_nchw_strides = ww;
+        int n_nhwc_strides = hh * ww * cc;
+        int h_nhwc_strides = ww * cc;
+        int w_nhwc_strides = cc;
+        // int nhwc_index = 0;
+        // int nchw_index = 0;
+#pragma omp parallel for collapse(3)
+        for (int ni = 0; ni < nn; ni++) {
+            for (int hi = 0; hi < hh; hi++) {
+                for (int wi = 0; wi < ww; wi++) {
+                    int nhwc_base = ni * n_nhwc_strides + hi * h_nhwc_strides +
+                                    wi * w_nhwc_strides;
+                    int nchw_base = ni * n_nchw_strides + hi * h_nchw_strides + wi;
+                    for (int ci = 0; ci < cc; ci++) {
+                        // nhwc_index =
+                        //     ni * hh * ww * cc + hi * ww * cc + wi * cc + ci;
+                        // nchw_index =
+                        //     ni * hh * ww * cc + ci * hh * ww + hi * ww + wi;
+                        // new_data[nchw_index] = old_data[nhwc_index];
+                        new_data[nchw_base + ci * c_nchw_strides] = old_data[nhwc_base + ci];
+                    }
+                }
+            }
+        }
+        copyin(new_data);
+    } else if (dtype == DataType::Int32) {
+        std::vector<int32_t> old_data = copyout<int32_t>();
+        std::vector<int32_t> new_data(old_data.size());
+        int nn = shape[0];
+        int cc = shape[1];
+        int hh = shape[2];
+        int ww = shape[3];
+        int n_nchw_strides = hh * ww * cc;
+        int c_nchw_strides = hh * ww;
+        int h_nchw_strides = ww;
+        int n_nhwc_strides = hh * ww * cc;
+        int h_nhwc_strides = ww * cc;
+        int w_nhwc_strides = cc;
+        // int nhwc_index = 0;
+        // int nchw_index = 0;
+#pragma omp parallel for collapse(3)
+        for (int ni = 0; ni < nn; ni++) {
+            for (int hi = 0; hi < hh; hi++) {
+                for (int wi = 0; wi < ww; wi++) {
+                    int nhwc_base = ni * n_nhwc_strides + hi * h_nhwc_strides +
+                                    wi * w_nhwc_strides;
+                    int nchw_base = ni * n_nchw_strides + hi * h_nchw_strides + wi;
+                    for (int ci = 0; ci < cc; ci++) {
+                        // nhwc_index =
+                        //     ni * hh * ww * cc + hi * ww * cc + wi * cc + ci;
+                        // nchw_index =
+                        //     ni * hh * ww * cc + ci * hh * ww + hi * ww + wi;
+                        // new_data[nchw_index] = old_data[nhwc_index];
+                        new_data[nchw_base + ci * c_nchw_strides] = old_data[nhwc_base + ci];
+                    }
+                }
+            }
+        }
+        copyin(new_data);
+    } else {
+        IT_TODO_HALT();
+    }
 }
 
 string TensorObj::toString() const {

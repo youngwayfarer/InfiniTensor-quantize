@@ -1,0 +1,284 @@
+[
+    {
+        "dataType": "Float32",
+        "device": "CPU",
+        "executionTimeMus": 23520.140625,
+        "opType": "Conv"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CPU",
+        "executionTimeMus": 1.1720678806304932,
+        "opType": "Reshape"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CPU",
+        "executionTimeMus": 548.0880126953125,
+        "opType": "Add"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CPU",
+        "executionTimeMus": 69.21450805664063,
+        "opType": "Relu"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CPU",
+        "executionTimeMus": 2056.732177734375,
+        "opType": "MaxPool"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CPU",
+        "executionTimeMus": 19.216388702392578,
+        "opType": "GlobalAveragePool"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CPU",
+        "executionTimeMus": 1.000100016593933,
+        "opType": "Flatten"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CPU",
+        "executionTimeMus": 668.7230224609375,
+        "opType": "Gemm"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CUDA",
+        "executionTimeMus": 10.692620277404785,
+        "opType": "Reshape"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CUDA",
+        "executionTimeMus": 188.69052124023438,
+        "opType": "Add"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CUDA",
+        "executionTimeMus": 7.034791946411133,
+        "opType": "Relu"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CUDA",
+        "executionTimeMus": 53654.98828125,
+        "opType": "MaxPool"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CUDA",
+        "executionTimeMus": 105.92063903808594,
+        "opType": "GlobalAveragePool"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CUDA",
+        "executionTimeMus": 17.899900436401367,
+        "opType": "Flatten"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CUDA",
+        "executionTimeMus": 211157.546875,
+        "opType": "Gemm"
+    },
+    {
+        "dataType": "Float16",
+        "device": "CUDA",
+        "executionTimeMus": 6.503602027893066,
+        "opType": "Reshape"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CUDA",
+        "executionTimeMus": 24.050289154052734,
+        "opType": "Cast"
+    },
+    {
+        "dataType": "Float16",
+        "device": "CUDA",
+        "executionTimeMus": 24.482831954956055,
+        "opType": "Add"
+    },
+    {
+        "dataType": "Float16",
+        "device": "CUDA",
+        "executionTimeMus": 4.310246467590332,
+        "opType": "Relu"
+    },
+    {
+        "dataType": "Float16",
+        "device": "CUDA",
+        "executionTimeMus": 33140.58984375,
+        "opType": "MaxPool"
+    },
+    {
+        "dataType": "Float16",
+        "device": "CUDA",
+        "executionTimeMus": 68.25081634521484,
+        "opType": "GlobalAveragePool"
+    },
+    {
+        "dataType": "Float16",
+        "device": "CUDA",
+        "executionTimeMus": 17.78182144165039,
+        "opType": "Flatten"
+    },
+    {
+        "dataType": "Float16",
+        "device": "CUDA",
+        "executionTimeMus": 7.094928741455078,
+        "opType": "Cast"
+    },
+    {
+        "dataType": "Int8",
+        "device": "CUDA",
+        "executionTimeMus": 5019.66357421875,
+        "opType": "Transpose"
+    },
+    {
+        "dataType": "Int8",
+        "device": "CUDA",
+        "executionTimeMus": 1130.82421875,
+        "opType": "Conv"
+    },
+    {
+        "dataType": "Int32",
+        "device": "CUDA",
+        "executionTimeMus": 21.151193618774414,
+        "opType": "Transpose"
+    },
+    {
+        "dataType": "Int32",
+        "device": "CUDA",
+        "executionTimeMus": 7.226322174072266,
+        "opType": "Cast"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CPU",
+        "executionTimeMus": 264.95391845703125,
+        "opType": "Cast"
+    },
+    {
+        "dataType": "Int8",
+        "device": "CPU",
+        "executionTimeMus": 13980.302734375,
+        "opType": "Conv"
+    },
+    {
+        "dataType": "Int32",
+        "device": "CPU",
+        "executionTimeMus": 264.6025695800781,
+        "opType": "Cast"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CUDA",
+        "executionTimeMus": 194.44662475585938,
+        "opType": "Gather"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CUDA",
+        "executionTimeMus": 13.949800491333008,
+        "opType": "Unsqueeze"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CUDA",
+        "executionTimeMus": 16565.068359375,
+        "opType": "Mul"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CUDA",
+        "executionTimeMus": 9117.1904296875,
+        "opType": "Concat"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CUDA",
+        "executionTimeMus": 179.12510681152344,
+        "opType": "AveragePool"
+    },
+    {
+        "dataType": "Float16",
+        "device": "CUDA",
+        "executionTimeMus": 149.1103515625,
+        "opType": "Gather"
+    },
+    {
+        "dataType": "Float16",
+        "device": "CUDA",
+        "executionTimeMus": 12.677963256835938,
+        "opType": "Unsqueeze"
+    },
+    {
+        "dataType": "Float16",
+        "device": "CUDA",
+        "executionTimeMus": 12223.3095703125,
+        "opType": "Mul"
+    },
+    {
+        "dataType": "Float16",
+        "device": "CUDA",
+        "executionTimeMus": 6695.2841796875,
+        "opType": "Concat"
+    },
+    {
+        "dataType": "Float16",
+        "device": "CUDA",
+        "executionTimeMus": 50.46380615234375,
+        "opType": "AveragePool"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CPU",
+        "executionTimeMus": 1587.7825927734375,
+        "opType": "Gather"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CPU",
+        "executionTimeMus": 13.281914710998535,
+        "opType": "Unsqueeze"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CPU",
+        "executionTimeMus": 4697.79296875,
+        "opType": "Mul"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CPU",
+        "executionTimeMus": 407.73382568359375,
+        "opType": "Concat"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CPU",
+        "executionTimeMus": 2549.355712890625,
+        "opType": "AveragePool"
+    },
+    {
+        "dataType": "Float16",
+        "device": "CUDA",
+        "executionTimeMus": 12883.68359375,
+        "opType": "Conv"
+    },
+    {
+        "dataType": "Float32",
+        "device": "CUDA",
+        "executionTimeMus": 18366.70703125,
+        "opType": "Conv"
+    }
+]

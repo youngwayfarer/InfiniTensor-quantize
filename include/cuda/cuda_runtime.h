@@ -49,7 +49,7 @@ class CudaRuntimeObj : public RuntimeObj {
     string toString() const override;
 
     void run(const Graph &graph, bool tune = false,
-             bool profiling = false) const;
+             bool profiling = false, bool calibrate = false, bool loss_pass = false, bool quantized = false) const override;
 
     void *getCurrentStream() const override {
         return CUDAStream::getCurrentStream();
@@ -90,7 +90,13 @@ class CudaRuntimeObj : public RuntimeObj {
                                        CUDAStream::getCurrentStream()));
     }
 
-    void runWithoutSync(const Graph &graph) const;
+    void runWithoutSync(const Graph &graph, bool calibrate = false, bool loss_pass = false, bool quantized = false) const;
+
+    void simulatedRun(const Graph &graph) const override;
+
+    void record_perf_pass(const Graph &graph) const override;
+
+    void conv_pass(const Graph &graph) const override;
 
     void runWithCudaGraph(const Graph &graph);
 

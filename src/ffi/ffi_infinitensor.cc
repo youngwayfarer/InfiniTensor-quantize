@@ -1,10 +1,16 @@
+#include "core/common.h"
 #include "core/data_type.h"
 #include "core/graph_handler.h"
+#include "core/op_type.h"
+#include "core/operator.h"
+#include "core/runtime.h"
+#include "core/tensor.h"
 #include "operators/batch_norm.h"
 #include "operators/concat.h"
 #include "operators/conv.h"
 #include "operators/expand.h"
 #include "operators/gather.h"
+#include "operators/gemm.h"
 #include "operators/global_pool.h"
 #include "operators/lrn.h"
 #include "operators/matmul.h"
@@ -12,6 +18,8 @@
 #include "operators/pooling.h"
 #include "operators/reduce.h"
 #include "operators/reshape.h"
+#include "operators/resize.h"
+#include "operators/slice.h"
 #include "operators/split.h"
 #include "operators/squeeze.h"
 #include "operators/transpose.h"
@@ -21,6 +29,8 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <tuple>
+#include <vector>
 #ifdef USE_CUDA
 #include "cuda/cuda_runtime.h"
 #include "cuda/operator_timer.h"
@@ -90,6 +100,8 @@ void export_values(py::module &m) {
         .VALUE(OpType, Extend)
         .VALUE(OpType, MaxPool)
         .VALUE(OpType, AveragePool)
+        .VALUE(OpType, GlobalAveragePool)
+        .VALUE(OpType, Gemm)
         .VALUE(OpType, Add)
         .VALUE(OpType, Sub)
         .VALUE(OpType, Mul)
@@ -347,6 +359,23 @@ static std::tuple<float, float, float, int> lrn_attrs_of(Operator op) {
     return std::make_tuple(alpha, beta, bias, size);
 }
 
+// to fix
+// 不完善，只考虑yolov8s中的情况，参数固定
+static vector<float> resize_attrs_of(Operator op) {
+    IT_ASSERT(op->getOpType() == OpType::Resize);
+    auto resize = dynamic_cast<const ResizeObj *>(op.get());
+    return resize->getScales();
+}
+
+static std::tuple<Shape, Shape, Shape> slice_attrs_of(Operator op) {
+    IT_ASSERT(op->getOpType() == OpType::Slice);
+    auto slice = dynamic_cast<const SliceObj *>(op.get());
+    auto starts = slice->getStarts();
+    auto ends = slice->getEnds();
+    auto steps = slice->getSteps();
+    return std::make_tuple(starts, ends, steps);
+}
+
 void export_functions(py::module &m) {
 #define FUNCTION(NAME) def(#NAME, &NAME)
     m.def("cpu_runtime", &NativeCpuRuntimeObj::getInstance)
@@ -387,6 +416,8 @@ void export_functions(py::module &m) {
         .FUNCTION(gather_axis_of)
         .FUNCTION(flatten_axis_of)
         .FUNCTION(cast_to_of)
+        .FUNCTION(resize_attrs_of)
+        .FUNCTION(slice_attrs_of)
         .FUNCTION(depth_to_space_attrs_of)
         .FUNCTION(squeeze_axes_of)
         .FUNCTION(unsqueeze_axes_of)
@@ -469,6 +500,7 @@ void init_graph_builder(py::module &m) {
                                                       py::buffer_protocol())
         .def("fuid", &TensorObj::getFuid, policy::automatic)
         .def("shape", &TensorObj::getDims, policy::move)
+        .def("is_weight", &TensorObj::isWeight, policy::move)
         .def("set_weight", &TensorObj::setWeight, policy::move)
         .def("set_input", &TensorObj::setInput, policy::move)
         .def("set_output", &TensorObj::setOutput, policy::move)
@@ -612,6 +644,32 @@ void init_graph_builder(py::module &m) {
         .def("get_perf_time", &Handler::get_perf_time, policy::automatic)
         .def("tune", &Handler::tune, policy::automatic)
         .def("run", &Handler::run, policy::automatic)
+        .def("calibrate", &Handler::calibrate, policy::automatic)
+        .def("loss_pass", &Handler::loss_pass, policy::automatic)
+        .def("alpha_loss_pass", &Handler::alpha_loss_pass, policy::automatic)
+        .def("record_perf_pass", &Handler::record_perf_pass, policy::automatic)
+        .def("mixed_quantize", &Handler::mixed_quantize, policy::automatic)
+        .def("print", &Handler::print, policy::automatic)
+        .def("print_data", &Handler::print_data, policy::automatic)
+        .def("set_alpha", &Handler::set_alpha, policy::automatic)
+        .def("set_QEM", &Handler::set_QEM, policy::automatic)
+        .def("set_best_config", &Handler::set_best_config, policy::automatic)
+        .def("set_best_config_cpu", &Handler::set_best_config_cpu,
+             policy::automatic)
+        .def("empty_bit_loss", &Handler::emptyBitLoss, policy::automatic)
+        .def("initG", &Handler::initG, policy::automatic)
+        .def("int_quantize", &Handler::int_quantize, policy::automatic)
+        .def("int_quantize_cpu", &Handler::int_quantize_cpu, policy::automatic)
+        .def("int_mixed_run", &Handler::int_mixed_run, policy::automatic)
+        .def("get_time", &Handler::getTime, policy::automatic)
+        .def("conv_pass", &Handler::conv_pass, policy::automatic)
+        .def("add_quantized_op", &Handler::add_quantized_op, policy::automatic)
+        .def("clear_quantized_ops", &Handler::clear_quantized_ops,
+             policy::automatic)
+        .def("empty_quantized_ops", &Handler::empty_quantized_ops,
+             policy::automatic)
+        .def("num_quantized_ops", &Handler::num_quantized_ops,
+             policy::automatic)
 #ifdef USE_CUDA
         .def("run_with_cudagraph", &Handler::run_with_cudagraph,
              policy::automatic)

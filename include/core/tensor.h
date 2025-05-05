@@ -1,4 +1,6 @@
 #pragma once
+#include "core/common.h"
+#include "core/data_type.h"
 #include "core/tensor_base.h"
 #include "core/tensor_type.h"
 #include "utils/data_convert.h"
@@ -24,6 +26,14 @@ class TensorObj : public TensorBaseObj {
     Fuid fuid;    // Cloned tensors share the same id. Tensors constructed from
                   // scratch have a new id.
     TensorType tensorType = TensorType::others;
+    // quantized to int8?
+    bool quantized = false;
+    int bits_width = 0;
+    float range = 0.0f;
+    float scale = 0.0f;
+    int quantized_range = 0;
+    // output 反量化的scale（两个输入的scale的积）
+    float output_scale = 0.0f;
 
   public:
     TensorObj(Shape shape, DataType dtype, Runtime runtime);
@@ -55,6 +65,52 @@ class TensorObj : public TensorBaseObj {
             tensorType = TensorType::output;
         }
     }
+    bool isQuantized() const { return quantized; }
+    void setQuantized(bool q) {
+        quantized = q;
+        if (!q) {
+            bits_width = 0;
+        }
+    }
+    void setQuantizeScale() {
+        IT_ASSERT(range != 0);
+        IT_ASSERT(bits_width != 0);
+        quantized_range = (1 << (bits_width - 1)) - 1;
+        IT_ASSERT(quantized_range > 0);
+        scale = range / quantized_range;
+    }
+    int getBitsWidth() const { return bits_width; }
+    void setBitsWidth(int bits) {
+        // IT_ASSERT(quantized == true);
+        IT_ASSERT(bits <= 8);
+        IT_ASSERT(bits >= 4);
+        bits_width = bits;
+        setQuantizeScale();
+    }
+    float getRange() const { return range; }
+    void setRange(float r) {
+        // IT_ASSERT(quantized == true);
+        range = r;
+    }
+    float getScale() const { return scale; }
+    void setScale(float s) {
+        // IT_ASSERT(quantized == true);
+        scale = s;
+    }
+    float getOutputScale() const { return output_scale; }
+    void setOutputScale(float s) {
+        output_scale = s;
+    }
+    void updateRange();
+    float getSimulatedLoss();
+    void simulatedQuantize();
+    void quantize();
+    void deQuantize(float val);
+    void deQuantize();
+    void shape_NCHW2NHWC();
+    void shape_NHWC2NCHW();
+    void data_NCHW2NHWC();
+    void data_NHWC2NCHW();
     string tensorTypeToString() const {
         switch (tensorType) {
         case TensorType::weight:

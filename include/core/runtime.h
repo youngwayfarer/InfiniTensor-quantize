@@ -68,11 +68,18 @@ class RuntimeObj : public std::enable_shared_from_this<RuntimeObj> {
      * @param tune If there is no performance record, whether to tune it.
      * These can be independent method.
      * @param profiling Whether to print breakdown of time
+     * @param calibrate Whether to calibrate (in quantize)
      */
     virtual void run(const Graph &graph, bool tune = false,
-                     bool profiling = false) const = 0;
+                     bool profiling = false, bool calibrate = false, bool loss_pass = false, bool quantized = false) const = 0;
+
+    virtual void simulatedRun(const Graph &graph) const;
 
     virtual void *getCurrentStream() const { return nullptr; }
+
+    virtual void conv_pass(const Graph &graph) const;
+
+    virtual void record_perf_pass(const Graph &graph) const;
 
     virtual void *alloc(size_t size) = 0;
     virtual void dealloc(void *ptr) = 0;
@@ -124,8 +131,12 @@ class CpuRuntimeObj : public RuntimeObj {
   public:
     CpuRuntimeObj(Device dev) : RuntimeObj(dev) {}
 
-    void run(const Graph &graph, bool tune = false,
-             bool profiling = false) const override;
+    void run(const Graph &graph, bool tune = false, bool profiling = false,
+             bool calibrate = false, bool loss_pass = false, bool quantized = false) const override;
+
+    void simulatedRun(const Graph &graph) const override;
+
+    void record_perf_pass(const Graph &graph) const override;
 
     void copyBlobFromCPU(void *dst, const void *src,
                          size_t bytes) const override;

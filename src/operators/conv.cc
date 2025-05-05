@@ -1,4 +1,5 @@
 #include "operators/conv.h"
+#include "core/data_type.h"
 
 namespace infini {
 
@@ -47,6 +48,25 @@ vector<int> ConvBaseObj::getOpAttrVector() const {
 void ConvObj::setAuxilaryAttributes(PaddingMode mode) {
     const Tensor &input = inputs[0];
     const Tensor &weight = inputs[1];
+    // if (input->getDType() == DataType::Int8) {
+    //     // NHWC
+    //     n = input->getDims()[0];
+    //     h = input->getDims()[1];
+    //     w = input->getDims()[2];
+    //     c = input->getDims()[3];
+    //     f = weight->getDims()[0];
+    //     r = weight->getDims()[1];
+    //     s = weight->getDims()[2];
+    // } else {
+    //     // NCHW
+    //     n = input->getDims()[0];
+    //     c = input->getDims()[1];
+    //     h = input->getDims()[2];
+    //     w = input->getDims()[3];
+    //     f = weight->getDims()[0];
+    //     r = weight->getDims()[2];
+    //     s = weight->getDims()[3];
+    // }
     n = input->getDims()[0], c = input->getDims()[1], h = input->getDims()[2],
     w = input->getDims()[3], f = weight->getDims()[0], r = weight->getDims()[2],
     s = weight->getDims()[3];
@@ -60,24 +80,47 @@ void ConvObj::setAuxilaryAttributes(PaddingMode mode) {
     }
 }
 
+//* use the code of master branch
+// ConvObj::ConvObj(GraphObj *graph, Tensor input, Tensor weight, Tensor output,
+//                  int ph, int pw, Tensor bias, int sh, int sw, int dh, int dw,
+//                  ActType act)
+//     : ConvBaseObj(OpType::Conv,
+//                   bias ? TensorVec{input, weight, bias}
+//                        : TensorVec{input, weight},
+//                   output, ph, pw, sh, sw, dh, dw, input, weight, act) {
+//     setAuxilaryAttributes(PaddingMode::Other);
+//     IT_ASSERT(checkValid(graph));
+// }
+
+// ConvObj::ConvObj(GraphObj *graph, Tensor input, Tensor weight, Tensor output,
+//                  Tensor bias, PaddingMode mode, int sh, int sw, int dh, int
+//                  dw, ActType act)
+//     : ConvBaseObj(OpType::Conv,
+//                   bias ? TensorVec{input, weight, bias}
+//                        : TensorVec{input, weight},
+//                   output, mode, sh, sw, dh, dw, input, weight, act) {
+//     setAuxilaryAttributes(mode);
+//     IT_ASSERT(checkValid(graph));
+// }
+
 ConvObj::ConvObj(GraphObj *graph, Tensor input, Tensor weight, Tensor output,
-                 int ph, int pw, Tensor bias, int sh, int sw, int dh, int dw,
+                 int ph, int pw, int sh, int sw, int dh, int dw, Tensor bias,
                  ActType act)
-    : ConvBaseObj(OpType::Conv,
-                  bias ? TensorVec{input, weight, bias}
-                       : TensorVec{input, weight},
-                  output, ph, pw, sh, sw, dh, dw, input, weight, act) {
+    : ConvBaseObj(OpType::Conv, {input, weight}, output, ph, pw, sh, sw, dh, dw,
+                  input, weight, act) {
+    if (bias)
+        IT_TODO_HALT();
     setAuxilaryAttributes(PaddingMode::Other);
     IT_ASSERT(checkValid(graph));
 }
 
 ConvObj::ConvObj(GraphObj *graph, Tensor input, Tensor weight, Tensor output,
-                 Tensor bias, PaddingMode mode, int sh, int sw, int dh, int dw,
+                 PaddingMode mode, int sh, int sw, int dh, int dw, Tensor bias,
                  ActType act)
-    : ConvBaseObj(OpType::Conv,
-                  bias ? TensorVec{input, weight, bias}
-                       : TensorVec{input, weight},
-                  output, mode, sh, sw, dh, dw, input, weight, act) {
+    : ConvBaseObj(OpType::Conv, {input, weight}, output, mode, sh, sw, dh, dw,
+                  input, weight, act) {
+    if (bias)
+        IT_TODO_HALT();
     setAuxilaryAttributes(mode);
     IT_ASSERT(checkValid(graph));
 }
@@ -135,6 +178,26 @@ void ConvObj::initInfiniOp(const Runtime context) {
 
 optional<vector<Shape>> ConvObj::inferShape(const TensorVec &inputs) {
     const auto &input = inputs[0], &weight = inputs[1];
+    // if (input->getDType() == DataType::Int8) {
+    //     // NHWC
+    //     n = input->getDims()[0];
+    //     h = input->getDims()[1];
+    //     w = input->getDims()[2];
+    //     c = input->getDims()[3];
+    //     f = weight->getDims()[0];
+    //     r = weight->getDims()[1];
+    //     s = weight->getDims()[2];
+    // } else {
+    //     // NCHW
+    //     n = input->getDims()[0];
+    //     c = input->getDims()[1];
+    //     h = input->getDims()[2];
+    //     w = input->getDims()[3];
+    //     f = weight->getDims()[0];
+    //     r = weight->getDims()[2];
+    //     s = weight->getDims()[3];
+    // }
+
     n = input->getDims()[0];
     c = input->getDims()[1];
     h = input->getDims()[2];
@@ -144,8 +207,20 @@ optional<vector<Shape>> ConvObj::inferShape(const TensorVec &inputs) {
     s = weight->getDims()[3];
     int on = n, oc = f;
     int oh = 0, ow = 0;
+
+    // if (input->getDType() == DataType::Int8) {
+    //     // NHWC
+    //     // For NCDHW+FCQRS layout, C of input is divisable by C of weight.
+    //     IT_ASSERT(input->getDims()[3] % weight->getDims()[3] == 0);
+    // } else {
+    //     // NCHW
+    //     // For NCHW+FCRS layout, C of input is divisable by C of weight.
+    //     IT_ASSERT(input->getDims()[1] % weight->getDims()[1] == 0);
+    // }
+
     // For NCHW+FCRS layout, C of input is divisable by C of weight
     IT_ASSERT(input->getDims()[1] % weight->getDims()[1] == 0);
+
     // Set padding size
     if (padding == PaddingMode::Other) {
         oh = (h - (r - sh) * dh + ph * 2) / sh;
@@ -161,6 +236,15 @@ optional<vector<Shape>> ConvObj::inferShape(const TensorVec &inputs) {
         oh = (h - (r - sh) * dh + ph * 2) / sh;
         ow = (w - (s - sw) * dw + pw * 2) / sw;
     }
+
+    // if (input->getDType() == DataType::Int8) {
+    //     // NHWC
+    //     return {{{on, oh, ow, oc}}};
+    // } else {
+    //     // NCHW
+    //     return {{{on, oc, oh, ow}}};
+    // }
+
     return {{{on, oc, oh, ow}}};
 }
 

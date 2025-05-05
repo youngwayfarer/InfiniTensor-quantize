@@ -2,6 +2,9 @@
 #include "core/constants.h"
 #include "cuda/cuda_common.h"
 #include "cuda/cuda_unary.h"
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cub/cub.cuh>
 #include <math.h>
 
@@ -150,6 +153,64 @@ __global__ void _cast_kernel(INPUT *input, OUTPUT *output, size_t n) {
     if (index < n) {
         cub::CastOp<OUTPUT> _CastOp;
         output[index] = _CastOp(input[index]);
+    }
+}
+
+// quantize cast fp32->int8
+template <typename INPUT, typename OUTPUT>
+__global__ void _quantize_cast_kernel(INPUT *input, OUTPUT *output, size_t n,
+                                       float scale) {
+    size_t index = threadIdx.x + blockIdx.x * blockDim.x;
+
+    if (index < n) {
+        // 量化计算: output = round(input / scale) + zero_point
+        // 对于int8, 需要确保结果在[-127, 127]范围内
+        //! 是否必须用rint，待测试
+        //! 可以手动实现rint
+        float quantized_val = round(input[index] / scale);
+
+        // 添加截断逻辑
+        // int8: -127 ~ 127
+        quantized_val = max(-127.0f, min(127.0f, quantized_val));
+
+        // output[index] = static_cast<OUTPUT>(quantized_val);
+        cub::CastOp<OUTPUT> _CastOp;
+        output[index] = _CastOp(quantized_val);
+    }
+}
+
+// quantize cast fp16->int8
+template <typename INPUT, typename OUTPUT>
+__global__ void _quantize_fp16_cast_kernel(INPUT *input, OUTPUT *output,
+                                           size_t n, float scale) {
+    //! 测试
+    //! gpu中fp16如何储存
+    //* 正确
+    size_t index = threadIdx.x + blockIdx.x * blockDim.x;
+
+    if (index < n) {
+        float fp32_val = __half2float(input[index]);
+        float quantized_val = round(fp32_val / scale);
+        quantized_val = max(-127.0f, min(127.0f, quantized_val));
+
+        // output[index] = static_cast<OUTPUT>(quantized_val);
+        cub::CastOp<OUTPUT> _CastOp;
+        output[index] = _CastOp(quantized_val);
+    }
+}
+
+// dequantize cast
+template <typename INPUT, typename OUTPUT>
+__global__ void _dequantize_cast_kernel(INPUT *input, OUTPUT *output, size_t n,
+                                        float scale) {
+    size_t index = threadIdx.x + blockIdx.x * blockDim.x;
+
+    if (index < n) {
+        float dequantized_val = input[index] * scale;
+
+        // output[index] = static_cast<OUTPUT>(quantized_val);
+        cub::CastOp<OUTPUT> _CastOp;
+        output[index] = _CastOp(dequantized_val);
     }
 }
 
@@ -361,6 +422,37 @@ void cast_kernel(INPUT *input, OUTPUT *output, size_t num) {
             input, output, num);
 }
 
+template <typename INPUT, typename OUTPUT>
+void quantize_cast_kernel(INPUT *input, OUTPUT *output, size_t num,
+                          float scale) {
+    int blocksize = block_work_size();
+    int gridsize = (num + block_work_size() - 1) / block_work_size();
+    _quantize_cast_kernel<INPUT, OUTPUT>
+        <<<gridsize, blocksize, 0, CUDAStream::getCurrentStream()>>>(
+            input, output, num, scale
+        );
+}
+
+template <typename INPUT, typename OUTPUT>
+void quantize_fp16_cast_kernel(INPUT *input, OUTPUT *output, size_t num,
+                               float scale) {
+    int blocksize = block_work_size();
+    int gridsize = (num + block_work_size() - 1) / block_work_size();
+    _quantize_fp16_cast_kernel<INPUT, OUTPUT>
+        <<<gridsize, blocksize, 0, CUDAStream::getCurrentStream()>>>(
+            input, output, num, scale);
+}
+
+template <typename INPUT, typename OUTPUT>
+void dequantize_cast_kernel(INPUT *input, OUTPUT *output,
+                            size_t num, float scale) {
+    int blocksize = block_work_size();
+    int gridsize = (num + block_work_size() - 1) / block_work_size();
+    _dequantize_cast_kernel<INPUT, OUTPUT>
+        <<<gridsize, blocksize, 0, CUDAStream::getCurrentStream()>>>(
+            input, output, num, scale);
+}
+
 template <typename T>
 void leaky_relu_kernel(T *input, T *output, size_t num, float alphaValue) {
     int blocksize = block_work_size();
@@ -384,6 +476,38 @@ template void cast_kernel<float, int8_t>(float *input, int8_t *output,
                                          size_t num);
 template void cast_kernel<int8_t, float>(int8_t *input, float *output,
                                          size_t num);
+// int32 -> fp32
+template void cast_kernel<int32_t, float>(int32_t *input, float *output,
+                                          size_t num);
+// // int8 -> fp16
+// template void cast_kernel<int8_t, half>(int8_t *input, half *output,
+//                                         size_t num);
+// // fp16 -> int8
+// template void cast_kernel<half, int8_t>(half *input, int8_t *output,
+//                                         size_t num);
+// int32 -> fp16
+template void cast_kernel<int32_t, half>(int32_t *input, half *output,
+                                         size_t num);
+
+// fp32 -> int8 quantize cast
+template void quantize_cast_kernel<float, int8_t>(float *input, int8_t *output,
+                                                  size_t num, float scale);
+
+// fp16 -> int8 quantize cast
+template void quantize_fp16_cast_kernel<half, int8_t>(half *input,
+                                                       int8_t *output,
+                                                       size_t num, float scale);
+
+// int32 -> fp32 dequantize cast
+template void dequantize_cast_kernel<int32_t, float>(int32_t *input,
+                                                     float *output, size_t num,
+                                                     float scale);
+
+// int32 -> fp16 dequantize cast
+template void dequantize_cast_kernel<int32_t, half>(int32_t *input,
+                                                     half *output, size_t num,
+                                                     float scale);
+
 template void leaky_relu_kernel<float>(float *input, float *output, size_t num,
                                        float alpha);
 }; // namespace infini

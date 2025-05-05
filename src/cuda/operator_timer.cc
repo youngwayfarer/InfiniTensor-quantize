@@ -34,9 +34,12 @@ double getPerfConvCudnn(int n, int c, int h, int w, int f, int r, int s,
     Tensor i0Cuda = gCuda->cloneTensor(i0Cpu);
     Tensor w0Cuda = gCuda->cloneTensor(w0Cpu);
     // Build CUDA graph
-    auto conv =
-        gCuda->addOp<ConvObj>(i0Cuda, w0Cuda, nullptr, padh, padw, nullptr,
-                              strideh, stridew, dilationh, dilationw);
+    //* use the code of master branch
+    // auto conv =
+    //     gCuda->addOp<ConvObj>(i0Cuda, w0Cuda, nullptr, padh, padw, nullptr,
+    //                           strideh, stridew, dilationh, dilationw);
+    auto conv = gCuda->addOp<ConvObj>(i0Cuda, w0Cuda, nullptr, padh, padw,
+                                      strideh, stridew, dilationh, dilationw);
     // allocate CUDA memory
     gCuda->dataMalloc();
     // Execute on CUDA

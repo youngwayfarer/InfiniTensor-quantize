@@ -1,8 +1,10 @@
 ﻿#pragma once
 
 #include "core/graph.h"
+#include "core/op_type.h"
 #include "core/operator.h"
 #include "core/runtime.h"
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
 
@@ -25,8 +27,12 @@ class GraphHandlerObj {
 
     inline OpVec operators() { return g->getOperators(); }
 
-    Tensor conv(Tensor input, Tensor weight, Tensor bias, Tensor output, int ph,
-                int pw, int sh, int sw, int dh, int dw);
+    //* use the code of master branch
+    // without bias
+    // Tensor conv(Tensor input, Tensor weight, Tensor bias, Tensor output, int ph,
+    //             int pw, int sh, int sw, int dh, int dw);
+    Tensor conv(Tensor input, Tensor weight, Tensor output, int ph, int pw,
+                int sh, int sw, int dh, int dw);
     Tensor convTransposed2d(Tensor input, Tensor weight, Tensor output, int ph,
                             int pw, int sh, int sw, int dh, int dw, int oph,
                             int opw);
@@ -151,6 +157,66 @@ class GraphHandlerObj {
     inline void run() { g->getRuntime()->run(g); }
 
     inline double get_perf_time() { return g->getRuntime()->getPerfTime(g); }
+
+    // mixed precision quantization
+    inline void mixed_quantize() { g->mixed_quantize(); }
+
+    inline void int_quantize() { g->int_quantize(); }
+
+    inline void int_quantize_cpu() { g->int_quantize_cpu(); }
+
+    inline void print_data() { g->print_data(); }
+
+    inline void print() { g->print(); }
+
+    // int quantize run
+    inline void int_mixed_run()  { g->getRuntime()->run(g, false, false, false, false, true); }
+
+    // calibrate
+    inline void calibrate() { g->getRuntime()->run(g, false, false, true, false, false); }
+
+    // loss pass(1st)
+    inline void loss_pass() {
+        g->getRuntime()->run(g, false, false, false, true, false);
+    }
+
+    // set best config
+    inline void set_best_config() { g->setBestConfig(); }
+
+    inline void set_best_config_cpu() { g->setBestConfigCPU(); }
+
+    // alpha loss pass(2nd)
+    inline void alpha_loss_pass() { g->getRuntime()->simulatedRun(g); }
+
+    // perf record
+    inline void record_perf_pass() { g->getRuntime()->record_perf_pass(g); }
+
+    // set alpha
+    inline void set_alpha(float val) {
+        g->setAlpha(val);
+        g->setOpAlpha();
+    }
+
+    // set QEM
+    inline void set_QEM(float val) {
+        g->setQEM(val);
+        g->setOpQEM();
+    }
+
+    // empty the bit_loss
+    inline void emptyBitLoss() { g->emptyBitLoss(); }
+
+    inline void initG() { g->init_g(); }
+
+    inline double getTime() { return g->get_run_time(); }
+
+    inline void conv_pass() { g->getRuntime()->conv_pass(g); }
+
+    inline void add_quantized_op(OpType optype) { g->addQuantizedOp(optype); }
+    inline void clear_quantized_ops() { g->clearQuantizedOps(); }
+    inline bool empty_quantized_ops() { return g->emptyQuantizedOps(); }
+    inline size_t num_quantized_ops() { return g->numQuantizedOps(); }
+    inline bool in_quantized_ops(OpType optype) { return g->inQuantizedOps(optype); }
 
 #ifdef USE_CUDA
     inline void run_with_cudagraph() {

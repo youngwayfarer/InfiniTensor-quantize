@@ -30,6 +30,7 @@ from onnxsim import simplify
 import copy
 import warnings
 import numpy as np
+import torch
 
 
 class OnnxStub:
@@ -97,6 +98,7 @@ class OnnxStub:
                 raise Exception("Graph has cycle")
 
         tensors: Dict[str, backend.Tensor] = dict()
+        # data 用于存储和快速访问模型的初始化张量 ，这些张量通常包含静态参数（如形状、常量值）
         data: Dict[str, TensorProto] = dict()
 
         for initializer in model.graph.initializer:
@@ -115,6 +117,41 @@ class OnnxStub:
 
         for node_idx in sorted_nodes:
             node = model.graph.node[node_idx]
+            # use the code of master branch
+            # handle the Conv with bias
+            # if node.op_type == "Conv":
+            #     attributes = _parse_attribute(
+            #         node,
+            #         {
+            #             "dilations": [1, 1],
+            #             "pads": [0, 0, 0, 0],
+            #             "strides": [1, 1],
+            #         },
+            #     )
+            #     (d, p, s) = (
+            #         attributes[name] for name in ["dilations", "pads", "strides"]
+            #     )
+            #     if p[0] != p[2] or p[1] != p[3]:
+            #         adapt = "{}-adapt".format(node.output[0])
+            #         tensors[adapt] = self.handler.pad(
+            #             tensors[node.input[0]], None, p, [-2, -1]
+            #         )
+            #         p = [0, 0, 0, 0]
+            #     else:
+            #         adapt = node.input[0]
+
+            #         tensors[node.output[0]] = self.handler.conv(
+            #             tensors[adapt],
+            #             tensors[node.input[1]],
+            #             tensors[node.input[2]] if len(node.input) > 2 else None,
+            #             tensors.get(node.output[0]),
+            #             p[0],
+            #             p[1],
+            #             s[0],
+            #             s[1],
+            #             d[0],
+            #             d[1],
+            #         )
             if node.op_type == "Conv":
                 attributes = _parse_attribute(
                     node,
@@ -136,10 +173,43 @@ class OnnxStub:
                 else:
                     adapt = node.input[0]
 
+                if len(node.input) > 2:
+                    # conv with bias -> conv without bias + reshape + add
+                    bias = "{}-bias".format(node.output[0])
+                    reshape = "{}-reshape".format(node.output[0])
+                    tensors[bias] = self.handler.conv(
+                        tensors[adapt],
+                        tensors[node.input[1]],
+                        None,
+                        p[0],
+                        p[1],
+                        s[0],
+                        s[1],
+                        d[0],
+                        d[1],
+                    )
+                    tensors[reshape] = self.handler.reshape(
+                        tensors[node.input[2]],
+                        None,
+                        [
+                            1,
+                            reduce(
+                                lambda acc, x: acc * x,
+                                tensors[node.input[2]].shape(),
+                            ),
+                            1,
+                            1,
+                        ],
+                    )
+                    tensors[node.output[0]] = self.handler.add(
+                        tensors[bias],
+                        tensors[reshape],
+                        tensors.get(node.output[0]),
+                    )
+                else:
                     tensors[node.output[0]] = self.handler.conv(
                         tensors[adapt],
                         tensors[node.input[1]],
-                        tensors[node.input[2]] if len(node.input) > 2 else None,
                         tensors.get(node.output[0]),
                         p[0],
                         p[1],
@@ -1279,15 +1349,18 @@ class OnnxStub:
                 backend.OpTypeId.HardSigmoid,
                 backend.OpTypeId.HardSwish,
                 backend.OpTypeId.Tanh,
-                backend.OpTypeId.Softmax,
+                # backend.OpTypeId.Softmax,
                 backend.OpTypeId.Abs,
                 backend.OpTypeId.Identity,
                 backend.OpTypeId.PRelu,
                 backend.OpTypeId.Sqrt,
                 backend.OpTypeId.Erf,
                 backend.OpTypeId.Neg,
+                backend.OpTypeId.GlobalAveragePool
             ]:
                 ctx.push_node(make_node(ty.name, inputs, outputs, name))
+            elif ty == backend.OpTypeId.Softmax:
+                ctx.push_node(make_node(ty.name, inputs, outputs, name, axis=1))
             elif ty == backend.OpTypeId.Flatten:
                 axis = backend.flatten_axis_of(op)
                 ctx.push_node(make_node(ty.name, inputs, outputs, name, axis=axis))
@@ -1337,15 +1410,29 @@ class OnnxStub:
                 axis = backend.split_axis_of(op)
                 num_outputs = len(outputs)
                 split = op.inputs()[0].shape()[axis] // num_outputs
-                inputs.append(
-                    ctx.push_data_input(
-                        name,
-                        "split",
-                        TensorProto.INT64,
-                        [len(outputs)],
-                        [split for _ in range(0, num_outputs)],
+                
+                # yolov8s
+                # 不平等分割暂时解决
+                if name == "Split9":
+                    inputs.append(
+                        ctx.push_data_input(
+                            name,
+                            "split",
+                            TensorProto.INT64,
+                            [len(outputs)],
+                            [64, 80],
+                        )
                     )
-                )
+                else:
+                    inputs.append(
+                        ctx.push_data_input(
+                            name,
+                            "split",
+                            TensorProto.INT64,
+                            [len(outputs)],
+                            [split for _ in range(0, num_outputs)],
+                        )
+                    )
                 ctx.push_node(
                     make_node(
                         ty.name,
@@ -1369,7 +1456,33 @@ class OnnxStub:
                     make_node(ty.name, inputs, outputs, name, keepdims=keepdims)
                 )
             elif ty == backend.OpTypeId.Slice:
-                raise Exception("TODO")
+                # to fix
+                # 不完善，只考虑yolov8s中的情况，参数固定
+                # raise Exception("TODO")
+                starts, ends, steps = backend.slice_attrs_of(op)
+                inputs.append(
+                    ctx.push_data_input(
+                        name, "starts", TensorProto.INT32, [1], [starts[1]]
+                    )
+                )
+                inputs.append(
+                    ctx.push_data_input(
+                        name, "ends", TensorProto.INT32, [1], [ends[1]]
+                    )
+                )
+                inputs.append(
+                    ctx.push_data_input(
+                        name, "axes", TensorProto.INT32, [1], [1]
+                    )
+                )
+                # inputs.append(
+                #     ctx.push_data_input(
+                #         name, "steps", TensorProto.INT32, [len(starts)], starts
+                #     )
+                # )
+                ctx.push_node(
+                    make_node(ty.name, inputs, outputs, name)
+                )
             elif ty == backend.OpTypeId.Pad:
                 pads = backend.pad_pads_of(op)
                 inputs.append(
@@ -1421,6 +1534,30 @@ class OnnxStub:
                         size,
                     )
                 )
+            # Resize
+            # to fix
+            # 不完善，只考虑yolov8s中的情况，参数固定
+            elif ty == backend.OpTypeId.Resize:
+                # only consider:
+                # mode: nearest
+                # nearest_mode: floor
+                # coordinate_transformation_mode: asymmetric
+                # scales
+                inputs.insert(1, ctx.push_data_input(name, "roi", TensorProto.FLOAT, [0], []))
+                mode = "nearest"
+                nearest_mode = "floor"
+                coordinate_transformation_mode = "asymmetric"
+                ctx.push_node(
+                    make_node(
+                        ty.name,
+                        inputs,
+                        outputs,
+                        name,
+                        mode=mode,
+                        nearest_mode=nearest_mode,
+                        coordinate_transformation_mode=coordinate_transformation_mode
+                    )
+                )
             else:
                 raise Exception("Unsupported OpType", ty)
 
@@ -1430,6 +1567,7 @@ class OnnxStub:
         self.handler.data_malloc(self.use_naive_allocator)
 
     def optimize(self) -> None:
+        # optimize 暂时为空
         self.handler.optimize()
 
     def clone_KV(self, tensor: backend.Tensor) -> backend.Tensor:
@@ -1464,6 +1602,85 @@ class OnnxStub:
     def get_perf_time(self) -> float:
         self.handler.get_perf_time()
 
+    def mixed_quantize(self) -> None:
+        self.handler.mixed_quantize()
+
+    def calibrate(self, calibrate_data: List) -> None:
+        for item in calibrate_data:
+            next(iter(self.inputs.values())).copyin_numpy(item)
+            self.handler.calibrate()
+
+    def empty_loss(self) -> None:
+        self.handler.empty_bit_loss()
+
+    def test_alpha(self, qem_val: float, calibrate_data: List, alpha: float) -> float:
+        self.handler.set_QEM(qem_val)
+        self.handler.set_alpha(alpha)
+        real_outputs = []
+        for item in calibrate_data:
+            next(iter(self.inputs.values())).copyin_numpy(item)
+            self.handler.loss_pass()
+            output = next(iter(self.outputs.values())).copyout_numpy()
+            real_outputs.append(output)
+        self.handler.set_best_config()
+        alpha_outputs = []
+        for item in calibrate_data:
+            next(iter(self.inputs.values())).copyin_numpy(item)
+            self.handler.alpha_loss_pass()
+            output = next(iter(self.outputs.values())).copyout_numpy()
+            alpha_outputs.append(output)
+        # calculate the MSE of real_outpus and alpha_outputs to find the best alpha
+        mse_list = [np.mean((real - alpha_output) ** 2) for real, alpha_output in zip(real_outputs, alpha_outputs)]
+        mse = np.mean(mse_list)
+        return mse
+
+    def set_best_alpha(self, qem_val: float, alpha: float, calibrate_data: List) -> None:
+        self.handler.set_QEM(qem_val)
+        self.handler.set_alpha(alpha)
+        for item in calibrate_data:
+            next(iter(self.inputs.values())).copyin_numpy(item)
+            self.handler.loss_pass()
+        self.handler.set_best_config()
+
+    def set_best_alpha_cpu(self, qem_val: float, alpha: float, calibrate_data: List) -> None:
+        self.handler.set_QEM(qem_val)
+        self.handler.set_alpha(alpha)
+        for item in calibrate_data:
+            next(iter(self.inputs.values())).copyin_numpy(item)
+            self.handler.loss_pass()
+        self.handler.set_best_config_cpu()
+
+    def int_mixed_quantize(self, qem_val: float, alpha: float, calibrate_data: List) -> None:
+        self.set_best_alpha(qem_val, alpha, calibrate_data)
+        self.handler.int_quantize()
+
+    def int_mixed_quantize_cpu(self, qem_val: float, alpha: float, calibrate_data: List) -> None:
+        self.set_best_alpha_cpu(qem_val, alpha, calibrate_data)
+        self.handler.int_quantize_cpu()
+
+    def int_mixed_run(self) -> None:
+        self.handler.int_mixed_run()
+
+    def print(self) -> None:
+        self.handler.print()
+
+    def print_data(self) -> None:
+        self.handler.print_data()
+
+    def get_time(self):
+        return self.handler.get_time()
+
+    def conv_pass(self):
+        self.handler.conv_pass()
+
+    def add_quantized_op(self, ops: List):
+        for op_name in ops:
+            op_type_id = getattr(backend.OpTypeId, op_name)
+            op_type = backend.OpType(op_type_id)
+            self.handler.add_quantized_op(op_type)
+
+    def record_perf_pass(self) -> None:
+        self.handler.record_perf_pass()
 
 def from_onnx(model: ModelProto, runtime):
     stub = OnnxStub(model, runtime)

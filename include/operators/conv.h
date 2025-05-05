@@ -1,5 +1,14 @@
 #pragma once
+#include "core/common.h"
+#include "core/data_type.h"
 #include "core/operator.h"
+#include "core/runtime.h"
+#include "core/tensor.h"
+#include "operators/transpose.h"
+#include <cstddef>
+#include <iostream>
+#include <memory>
+#include <utility>
 
 namespace infini {
 /**
@@ -50,6 +59,11 @@ class ConvBaseObj : public OperatorObj {
     int r, s; // weight shape
 
     ActType act;
+
+    int algo = 0;
+    size_t wsize = 0;
+    bool conv_pass = false;
+    bool int_quantized = false;
 
   public:
     /**
@@ -111,14 +125,31 @@ class ConvBaseObj : public OperatorObj {
     auto getNCHWFRS() const { return tuple(n, c, h, w, f, r, s); }
     auto getPadStrideDilation() const { return tuple(ph, pw, sh, sw, dh, dw); }
     int getChannelPerGroup() const {
+        //* 这里需要考虑后端，cpu， cuda
+        //* cuda上int8为NHWC，但cpu上仍为NCHW
         if (type == OpType::ConvTransNHWC) {
             return inputs[1]->getDims()[3];
         } else {
-            return inputs[1]->getDims()[1];
+            // if (inputs[0]->getDType() == DataType::Int8) {
+            //     return inputs[1]->getDims()[3];
+            // } else {
+            //     return inputs[1]->getDims()[1];
+            // }
+            return c;
+
+            // return inputs[1]->getDims()[1];
         }
     }
     ActType getAct() const { return act; }
     virtual int getNumGroups() const = 0;
+    int getAlgo() const { return algo; }
+    void setAlgo(int val) { algo = val; }
+    size_t getWsize() const { return wsize; }
+    void setWsize(size_t val) { wsize = val; }
+    bool getConvPass() const { return conv_pass; }
+    void setConvPass(bool val) { conv_pass = val; }
+    bool getIntQuantized() const { return int_quantized; }
+    void setIntQuantized(bool val) { int_quantized = val; }
 
   private:
     vector<int> getWorkloadVector() const override;
@@ -132,13 +163,23 @@ class ConvBaseObj : public OperatorObj {
 
 class ConvObj : public ConvBaseObj {
   public:
+    //* use the code of master branch
+    // ConvObj(GraphObj *graph, Tensor input, Tensor weight, Tensor output, int
+    // ph,
+    //         int pw, Tensor bias = nullptr, int sh = 1, int sw = 1, int dh =
+    //         1, int dw = 1, ActType act = ActType::None);
+    // // Constructors for setting padding mode
+    // ConvObj(GraphObj *graph, Tensor input, Tensor weight, Tensor output,
+    //         Tensor bias = nullptr, PaddingMode mode = PaddingMode::Same,
+    //         int sh = 1, int sw = 1, int dh = 1, int dw = 1,
+    //         ActType act = ActType::None);
     ConvObj(GraphObj *graph, Tensor input, Tensor weight, Tensor output, int ph,
-            int pw, Tensor bias = nullptr, int sh = 1, int sw = 1, int dh = 1,
-            int dw = 1, ActType act = ActType::None);
+            int pw, int sh = 1, int sw = 1, int dh = 1, int dw = 1,
+            Tensor bias = nullptr, ActType act = ActType::None);
     // Constructors for setting padding mode
     ConvObj(GraphObj *graph, Tensor input, Tensor weight, Tensor output,
-            Tensor bias = nullptr, PaddingMode mode = PaddingMode::Same,
-            int sh = 1, int sw = 1, int dh = 1, int dw = 1,
+            PaddingMode mode = PaddingMode::Same, int sh = 1, int sw = 1,
+            int dh = 1, int dw = 1, Tensor bias = nullptr,
             ActType act = ActType::None);
     OP_CLONE(ConvObj);
 

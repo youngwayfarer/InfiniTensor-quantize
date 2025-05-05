@@ -1,10 +1,14 @@
 #include "core/runtime.h"
 #include "core/blob.h"
+#include "core/common.h"
 #include "core/kernel.h"
+#include "core/op_type.h"
 #include "core/perf_engine.h"
+#include "core/simple_op_perf_db.h"
 #include "utils/data_generator.h"
 #include <chrono>
 #include <cstring>
+#include <string>
 namespace infini {
 DeviceEnum toInfiniopDevice(Device device) {
     switch (device) {
@@ -19,7 +23,17 @@ DeviceEnum toInfiniopDevice(Device device) {
     };
 }
 
-void CpuRuntimeObj::run(const Graph &graph, bool tune, bool profiling) const {
+void CpuRuntimeObj::run(const Graph &graph, bool tune, bool profiling, bool calibrate, bool loss_pass, bool quantized) const {
+    // std::cout << "========================" << std::endl;
+
+    //* test
+    // graph->printQuantizedOps();
+
+    graph->set_run_time(0);
+    IT_ASSERT(graph->get_run_time() == 0);
+
+    double r_time = 0;
+
     if (!tune && profiling)
         IT_TODO_HALT();
     const auto &kernelRegistry = KernelRegistry::getInstance();
@@ -30,6 +44,28 @@ void CpuRuntimeObj::run(const Graph &graph, bool tune, bool profiling) const {
     std::map<OpType, int> opCnt;
 
     for (auto &op : graph->getOperators()) {
+        //* calibrate, record range
+        if (calibrate) {
+            // if (op->getOpType() == OpType::Conv ||
+            //     op->getOpType() == OpType::Mul) {
+            if (graph->inQuantizedOps(op->getOpType())) {
+                for (auto input : op->getInputs()) {
+                    if (input->isWeight() && input->getRange() != 0) {
+                        continue;
+                    }
+                    input->updateRange();
+                }
+            }
+        }
+
+        if (loss_pass) {
+            // if (op->getOpType() == OpType::Conv ||
+            //     op->getOpType() == OpType::Mul) {
+            if (graph->inQuantizedOps(op->getOpType())) {
+                op->computeLoss();
+            }
+        }
+
         auto kernelAttrs = KernelAttrs{device, op->getOpType().underlying()};
         Kernel *kernel = kernelRegistry.getKernel(kernelAttrs);
         auto perfKey = PerfEngine::Key{kernelAttrs, op->getOpPerfKey()};
@@ -37,7 +73,34 @@ void CpuRuntimeObj::run(const Graph &graph, bool tune, bool profiling) const {
 
         // If no record and disable tuning, run with the default argument
         if (!perfData && !tune) {
+            auto start = std::chrono::high_resolution_clock::now();
             kernel->compute(op, this);
+            auto end = std::chrono::high_resolution_clock::now();
+            auto duration =
+            std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            double kernel_time = duration.count() / 1000000.0;
+            r_time += kernel_time;
+
+            //* calibrate
+            if (calibrate) {
+                // if (op->getOpType() == OpType::Conv ||
+                //     op->getOpType() == OpType::Mul) {
+                if (graph->inQuantizedOps(op->getOpType())) {
+                    for (auto output : op->getOutputs()) {
+                        output->updateRange();
+                    }
+                }
+            }
+
+            // if (!calibrate && !loss_pass && op->getOpType() == OpType::Conv) {
+            //     std::cout << "conv" << std::endl;
+            //     std::cout << "datatype: " << op->getDType().toString()
+            //               << std::endl;
+            //     std::cout << "op, kernel time: " << duration.count()
+            //               << std::endl;
+            //     std::cout << std::endl;
+            // }
+
             continue;
         }
 
@@ -68,8 +131,69 @@ void CpuRuntimeObj::run(const Graph &graph, bool tune, bool profiling) const {
             opCnt[op->getOpType()]++;
         }
     }
+
+    graph->set_run_time(r_time);
+
     if (profiling)
         printProfilingData(totalTime, opTime, opCnt);
+}
+
+void CpuRuntimeObj::simulatedRun(const Graph &graph) const {
+    graph->setConvPass(false);
+    const auto &kernelRegistry = KernelRegistry::getInstance();
+    for (auto &op : graph->getOperators()) {
+        // if (op->getOpType() == OpType::Conv || op->getOpType() ==
+        // OpType::Mul) {
+        if (graph->inQuantizedOps(op->getOpType())) {
+            op->simulatedInput();
+        }
+
+        auto kernelAttrs = KernelAttrs{device, op->getOpType().underlying()};
+        Kernel *kernel = kernelRegistry.getKernel(kernelAttrs);
+
+        kernel->compute(op, this);
+    }
+}
+
+void CpuRuntimeObj::record_perf_pass(const Graph &graph) const {
+    graph->setConvPass(false);
+    const auto &kernelRegistry = KernelRegistry::getInstance();
+    auto &perfDb = SimpleOpPerfDB::getInstance();
+
+    std::string perfFilePath =
+        "/home/kerr1gan/InfiniTensor/InfiniTensor/perf.json";
+
+    std::ifstream testFile(perfFilePath);
+    if (testFile.good()) {
+        testFile.close();
+        std::cout << "正在加载已有的性能数据..." << std::endl;
+        perfDb.loadFromFile(perfFilePath);
+    }
+
+    for (auto &op : graph->getOperators()) {
+        auto kernelAttrs = KernelAttrs{device, op->getOpType().underlying()};
+        Kernel *kernel = kernelRegistry.getKernel(kernelAttrs);
+
+        auto start = std::chrono::high_resolution_clock::now();
+
+        kernel->compute(op, this);
+
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration =
+            std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+        std::string opType = op->getOpType().toString();
+        std::string dataType = op->getDType().toString();
+        DeviceType deviceType =
+            (device == Device::CPU) ? DeviceType::CPU : DeviceType::CUDA;
+        float timeMus = static_cast<float>(duration.count());
+        perfDb.addRecord(opType, dataType, deviceType, timeMus);
+    }
+
+    perfDb.saveToFile(perfFilePath);
+    std::cout
+        << "性能测试完成，结果已保存到~/InfiniTensor/InfiniTensor/perf.json文件"
+        << std::endl;
 }
 
 double RuntimeObj::getPerfTime(const Graph &graph, bool profiling) const {
@@ -156,6 +280,21 @@ void RuntimeObj::copyBlob(const TensorObj *dst, const TensorObj *src) const {
         srcRuntime->copyBlobToCPU(dstPtr, srcPtr, bytes);
     } else
         IT_TODO_HALT();
+}
+
+void RuntimeObj::simulatedRun(const Graph &graph) const {
+    IT_TODO_HALT_MSG(
+        "only in cudaRuntime and CpuRuntime, not implemented here");
+}
+
+void RuntimeObj::conv_pass(const Graph &graph) const {
+    IT_TODO_HALT_MSG(
+        "only in cudaRuntime and CpuRuntime, not implemented here");
+}
+
+void RuntimeObj::record_perf_pass(const Graph &graph) const {
+    IT_TODO_HALT_MSG(
+        "only in cudaRuntime and CpuRuntime, not implemented here");
 }
 
 void CpuRuntimeObj::copyBlobFromCPU(void *dst, const void *src,

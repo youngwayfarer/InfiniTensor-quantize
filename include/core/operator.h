@@ -1,6 +1,8 @@
 #pragma once
 
+#include "core/common.h"
 #include "core/op_type.h"
+#include "core/runtime.h"
 #include "core/tensor.h"
 #include "utils/infiniop_utils.h"
 
@@ -55,6 +57,14 @@ class OperatorObj : public Object {
     vector<WRef<OperatorObj>> successors;
     void *opDesc;
 
+    // alpha
+    float alpha = 0;
+    // {w, a} : loss
+    std::map<std::pair<int, int>, float> bit_loss;
+    // the num of calibrate data
+    int calibrate_num = 0;
+    float QEM = 0;
+
   public:
     OperatorObj(OpType opType, TensorVec inputs, TensorVec outputs);
     virtual optional<vector<Shape>> inferShape(const TensorVec &inputs) = 0;
@@ -97,6 +107,88 @@ class OperatorObj : public Object {
     DataType getOutDType() const { return getOutput()->getDType(); }
     virtual int numInputs() const = 0;
     virtual int numOutputs() const = 0;
+
+    // 暂时只考虑conv, mul
+    // 其余算子未必正确
+    float getAlpha() const { return alpha; }
+    void setAlpha(float val) { alpha = val; }
+    float getQEM() const { return QEM; }
+    void setQEM(float val) { QEM = val; }
+    void computeLoss();
+    int getCalibrateNum() const { return calibrate_num; }
+    void calibrateNumIncrement() { calibrate_num++; }
+    void averageLoss() {
+        IT_ASSERT(calibrate_num > 0);
+        // IT_ASSERT(calibrate_num == 2);
+        IT_ASSERT(bit_loss.size() == 25);
+        for (auto it = bit_loss.begin(); it != bit_loss.end(); it++) {
+            it->second /= calibrate_num;
+        }
+        calibrate_num = 0;
+    }
+    // 外部调用averageLoss后， 才能调用getBestConfig
+    std::pair<int, int> getBestConfig() {
+        IT_ASSERT(calibrate_num == 0);
+        std::pair<int, int> bestConfig;
+        float base_loss = 0;
+        for (int w = 8; w >= 4; w--) {
+            for (int a = 8; a >= 4; a--) {
+                auto it = bit_loss.find(std::make_pair(w, a));
+                IT_ASSERT(it != bit_loss.end());
+                if (w == 8 && a == 8) {
+                    // 双int8，姑且认为最好
+                    base_loss = it->second;
+                    bestConfig = std::make_pair(w, a);
+                    continue;
+                }
+
+                if (it->second < base_loss * QEM) {
+                    bestConfig = std::make_pair(w, a);
+                }
+            }
+        }
+        return bestConfig;
+    }
+    void setInputBit() {
+        std::pair<int, int> bestConfig = getBestConfig();
+        int w = bestConfig.first;
+        int a = bestConfig.second;
+        Tensor input_a = inputs[0];
+        input_a->setBitsWidth(a);
+        Tensor input_w = inputs[1];
+        input_w->setBitsWidth(w);
+
+        //* test for int6, int7 of activation
+        // input_a->setBitsWidth(7);
+        // input_a->setBitsWidth(6);
+        // input_a->setBitsWidth(4);
+        // input_a->setBitsWidth(5);
+    }
+    void simulatedInput() {
+        //* 这里与真正量化改变图结构时保持一致(setBestConfig)
+        //* 因为setBestConfig会跳过不量化的算子，这里不跳过的话会导致这些算子出现巨大误差
+        if (getOpType() == OpType::Conv) {
+            int c = getInputs(0)->getDims()[1];
+            int f = getInputs(1)->getDims()[0];
+            Shape kernel_shape = getInputs(1)->getDims();
+            int kernel_size = kernel_shape[0] * kernel_shape[1] *
+                              kernel_shape[2] * kernel_shape[3];
+            if ((c % 4 != 0 || f % 4 != 0) || (kernel_size >= 589824)) {
+                return;
+            }
+        }
+
+        Tensor input_a = inputs[0];
+        input_a->simulatedQuantize();
+        Tensor input_w = inputs[1];
+        input_w->simulatedQuantize();
+    }
+    void emptyBitLoss() { bit_loss.clear(); }
+    void initOp() {
+        calibrate_num = 0;
+        bit_loss.clear();
+        IT_ASSERT(bit_loss.size() == 0);
+    }
 
     /**
      * @brief Clone this operator and replace its inputs and outputs.

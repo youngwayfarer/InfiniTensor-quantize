@@ -19,6 +19,15 @@ template <typename T>
 void leaky_relu_kernel(T *input, T *output, size_t num, float alpha);
 template <typename INPUT, typename OUTPUT>
 void cast_kernel(INPUT *input, OUTPUT *output, size_t num);
+template <typename INPUT, typename OUTPUT>
+void quantize_cast_kernel(INPUT *input, OUTPUT *output, size_t num,
+                          float scale);
+template <typename INPUT, typename OUTPUT>
+void quantize_fp16_cast_kernel(INPUT *input, OUTPUT *output, size_t num,
+                                  float scale);
+template <typename INPUT, typename OUTPUT>
+void dequantize_cast_kernel(INPUT *input, OUTPUT *output,
+                            size_t num, float scale);
 void elu_kernel(const float *input, float *output, size_t size, float alpha);
 void unary_kernel(const Operator &_op);
 

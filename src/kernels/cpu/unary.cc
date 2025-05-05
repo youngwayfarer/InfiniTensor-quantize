@@ -1,7 +1,16 @@
 #include "operators/unary.h"
+#include "core/common.h"
 #include "core/constants.h"
+#include "core/data_type.h"
 #include "core/kernel.h"
+#include "core/op_type.h"
+#include "core/ref.h"
+#include "core/runtime.h"
 #include "operators/softmax.h"
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 
 namespace infini {
 class NativeUnary : public CpuKernelWithoutConfig {
@@ -297,6 +306,38 @@ class Log : public CpuKernelWithoutConfig {
     }
 };
 
+class CastCpu : public CpuKernelWithoutConfig {
+    void compute(const Operator &_op,
+                 const RuntimeObj *context) const override {
+        auto op = as<CastObj>(_op);
+        size_t num = op->getOutput()->size();
+
+        if (op->getType() == CastType::Float2Int8) {
+            IT_ASSERT(op->getDType() == DataType::Float32 &&
+                      op->getOutDType() == DataType::Int8);
+            float *inptr = op->getInputs(0)->getRawDataPtr<float *>();
+            int8_t *outptr = op->getOutput()->getRawDataPtr<int8_t *>();
+            float scale = op->getInputs(0)->getScale();
+            for (size_t i = 0; i < num; i++) {
+                float q = std::rint(inptr[i] / scale);
+                q = std::max(-127.0f, std::min(127.0f, q));
+                outptr[i] = static_cast<int8_t>(q);
+            }
+        } else if (op->getType() == CastType::Int322Float) {
+            IT_ASSERT(op->getDType() == DataType::Int32 &&
+                      op->getOutDType() == DataType::Float32);
+            int32_t *inptr = op->getInputs(0)->getRawDataPtr<int32_t *>();
+            float *outptr = op->getOutput()->getRawDataPtr<float *>();
+            float scale = op->getOutput()->getOutputScale();
+            for (size_t i = 0; i < num; i++) {
+                outptr[i] = inptr[i] * scale;
+            }
+        } else {
+            IT_TODO_HALT_MSG("cast type not supported");
+        }
+    }
+};
+
 // REGISTER_KERNEL(Device::CPU, OpType::Relu, NativeUnary, "reluNaive_CPU");
 REGISTER_KERNEL(Device::CPU, OpType::Gelu, NativeUnary, "geluNaive_CPU");
 REGISTER_KERNEL(Device::CPU, OpType::Silu, NativeUnary, "siluNaive_CPU");
@@ -326,4 +367,6 @@ REGISTER_KERNEL(Device::CPU, OpType::Softmax, NaiveSoftmax, "softmaxNaive_CPU");
 // use infiniop instead of naive
 // REGISTER_KERNEL(Device::CPU, OpType::Clip, Clip, "Clip_CPU");
 REGISTER_KERNEL(Device::CPU, OpType::Log, Log, "Log_CPU");
+
+REGISTER_KERNEL(Device::CPU, OpType::Cast, CastCpu, "Cast_CPU");
 }; // namespace infini

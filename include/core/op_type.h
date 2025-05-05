@@ -269,4 +269,12 @@ enum class ActType {
 
 } // namespace infini
 
+namespace std {
+template <> struct hash<infini::OpType> {
+    size_t operator()(const infini::OpType &op) const noexcept {
+        return std::hash<infini::OpType::underlying_t>()(op.underlying());
+    }
+};
+} // namespace std
+
 #endif // OP_TYPE_H
