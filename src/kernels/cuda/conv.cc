@@ -238,11 +238,6 @@ class convCudnn : public Kernel {
                      convDesc, actDesc, outDesc] =
             createCuDNNDescriptor(op, record);
 
-        // if (op->getDType() == DataType::Int8 || op->getDType() ==
-        // DataType::Float16) {
-        //     record->algo = 2;
-        // }
-
         if (op->getDType() == DataType::Int8) {
             record->algo = 2;
         }
@@ -250,10 +245,6 @@ class convCudnn : public Kernel {
             record->algo = 2;
             record->workspaceSize = 5000000;
         }
-
-        // if (op->getDType() == DataType::Float16) {
-        //     record->workspaceSize = 5000000;
-        // }
 
         // * test(conv_pass)
         // if (op->getDType() == DataType::Float16 ||
@@ -413,19 +404,6 @@ class convCudnn : public Kernel {
         auto op = as<ConvObj>(_op);
         auto record = as<ConvCuDnnPerfRecordObj>(_record);
         auto context = dynamic_cast<const CudaRuntimeObj *>(_context);
-        // bool success = cuDNNUnfused(op, record, context);
-        // if (!success) {
-        //     record->algo = 1;
-        //     success = cuDNNUnfused(op, record, context);
-        //     if (!success) {
-        //         record->algo = 2;
-        //         success = cuDNNUnfused(op, record, context);
-        //     }
-        // }
-        // if (op->getDType() == DataType::Float32) {
-        //     record->algo = 2;
-        //     success = cuDNNUnfused(op, record, context);
-        // }
         bool success = false;
         for (int i = 0; i < 8; i++) {
             record->algo = i;

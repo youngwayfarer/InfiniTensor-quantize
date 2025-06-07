@@ -3,6 +3,7 @@ import torch
 import numpy as np
 from pyinfinitensor.onnx import OnnxStub, backend
 from PIL import Image
+import time
 
 if __name__ == '__main__':
     image_path = "../../figs/cat.png"
@@ -44,92 +45,106 @@ if __name__ == '__main__':
     onnx_model = onnx.load("../../models/inception_v3.onnx")
 
     # infinitensor
-    # model = OnnxStub(onnx_model, backend.cuda_runtime(), True)
-    model = OnnxStub(onnx_model, backend.cpu_runtime(), True)
+    model = OnnxStub(onnx_model, backend.cuda_runtime(), True)
+    # model = OnnxStub(onnx_model, backend.cpu_runtime(), True)
     # model = OnnxStub(onnx_model, backend.cuda_runtime())
 
     # model.mixed_quantize()
+    # calibration_data = [img, new_img]
+    # model.calibrate(calibration_data)
+    # model.int_mixed_quantize(1.1, 0.22, calibration_data)
     
     # next(iter(model.inputs.values())).copyin_numpy(img)
     # model.record_perf_pass()
 
 
-    # next(iter(model.inputs.values())).copyin_numpy(img)
-    # model.run()
-    # # model.int_mixed_run()
+    next(iter(model.inputs.values())).copyin_numpy(img)
+    start = time.perf_counter()
+    model.run()
+    end = time.perf_counter()
+    time1 = end - start
     # time1 = model.get_time()
-    # print(f"耗时: {time1:.6f} 秒")
+    print(f"耗时: {time1:.6f} 秒")
 
-    # outputs = next(iter(model.outputs.values())).copyout_numpy()
-    # res1 = outputs
-    # outputs = torch.tensor(outputs)
-    # outputs = torch.reshape(outputs, (1, 1000))
-    # _, predicted = torch.max(outputs, 1)
-    # print("--------------------------")
-    # print("res: ")
-    # print(predicted)
-    # print("--------------------------")
+    outputs = next(iter(model.outputs.values())).copyout_numpy()
+    res1 = outputs
+    outputs = torch.tensor(outputs)
+    outputs = torch.reshape(outputs, (1, 1000))
+    _, predicted = torch.max(outputs, 1)
+    print("--------------------------")
+    print("res: ")
+    print(predicted)
+    print("--------------------------")
+
+
+    next(iter(model.inputs.values())).copyin_numpy(new_img)
+    start = time.perf_counter()
+    model.run()
+    end = time.perf_counter()
+    time2 = end - start
+    # time2 = model.get_time()
+    print(f"耗时: {time2:.6f} 秒")
+
+    outputs = next(iter(model.outputs.values())).copyout_numpy()
+    res2 = outputs
+    outputs = torch.tensor(outputs)
+    outputs = torch.reshape(outputs, (1, 1000))
+    _, predicted = torch.max(outputs, 1)
+    print("--------------------------")
+    print("res: ")
+    print(predicted)
+    print("--------------------------")
+
+    next(iter(model.inputs.values())).copyin_numpy(new_new_img)
+    start = time.perf_counter()
+    model.run()
+    end = time.perf_counter()
+    time2 = end - start
+    # time2 = model.get_time()
+    print(f"耗时: {time2:.6f} 秒")
+
+    outputs = next(iter(model.outputs.values())).copyout_numpy()
+    res2 = outputs
+    outputs = torch.tensor(outputs)
+    outputs = torch.reshape(outputs, (1, 1000))
+    _, predicted = torch.max(outputs, 1)
+    print("--------------------------")
+    print("res: ")
+    print(predicted)
+    print("--------------------------")
     
-    # next(iter(model.inputs.values())).copyin_numpy(new_img)
-    # model.run()
-    # # model.int_mixed_run()
-    # time1 = model.get_time()
-    # print(f"耗时: {time1:.6f} 秒")
+    next(iter(model.inputs.values())).copyin_numpy(new_new_new_img)
+    start = time.perf_counter()
+    model.run()
+    end = time.perf_counter()
+    time2 = end - start
+    # time2 = model.get_time()
+    print(f"耗时: {time2:.6f} 秒")
 
-    # outputs = next(iter(model.outputs.values())).copyout_numpy()
-    # res1 = outputs
-    # outputs = torch.tensor(outputs)
-    # outputs = torch.reshape(outputs, (1, 1000))
-    # _, predicted = torch.max(outputs, 1)
-    # print("--------------------------")
-    # print("res: ")
-    # print(predicted)
-    # print("--------------------------")
+    outputs = next(iter(model.outputs.values())).copyout_numpy()
+    res2 = outputs
+    outputs = torch.tensor(outputs)
+    outputs = torch.reshape(outputs, (1, 1000))
+    _, predicted = torch.max(outputs, 1)
+    print("--------------------------")
+    print("res: ")
+    print(predicted)
+    print("--------------------------")
+    
+    next(iter(model.inputs.values())).copyin_numpy(new_new_new_new_img)
+    start = time.perf_counter()
+    model.run()
+    end = time.perf_counter()
+    time2 = end - start
+    # time2 = model.get_time()
+    print(f"耗时: {time2:.6f} 秒")
 
-    # next(iter(model.inputs.values())).copyin_numpy(new_new_img)
-    # model.run()
-    # # model.int_mixed_run()
-    # time1 = model.get_time()
-    # print(f"耗时: {time1:.6f} 秒")
-
-    # outputs = next(iter(model.outputs.values())).copyout_numpy()
-    # res1 = outputs
-    # outputs = torch.tensor(outputs)
-    # outputs = torch.reshape(outputs, (1, 1000))
-    # _, predicted = torch.max(outputs, 1)
-    # print("--------------------------")
-    # print("res: ")
-    # print(predicted)
-    # print("--------------------------")
-
-    # next(iter(model.inputs.values())).copyin_numpy(new_new_new_img)
-    # model.run()
-    # # model.int_mixed_run()
-    # time1 = model.get_time()
-    # print(f"耗时: {time1:.6f} 秒")
-
-    # outputs = next(iter(model.outputs.values())).copyout_numpy()
-    # res1 = outputs
-    # outputs = torch.tensor(outputs)
-    # outputs = torch.reshape(outputs, (1, 1000))
-    # _, predicted = torch.max(outputs, 1)
-    # print("--------------------------")
-    # print("res: ")
-    # print(predicted)
-    # print("--------------------------")
-
-    # next(iter(model.inputs.values())).copyin_numpy(new_new_new_new_img)
-    # model.run()
-    # # model.int_mixed_run()
-    # time1 = model.get_time()
-    # print(f"耗时: {time1:.6f} 秒")
-
-    # outputs = next(iter(model.outputs.values())).copyout_numpy()
-    # res1 = outputs
-    # outputs = torch.tensor(outputs)
-    # outputs = torch.reshape(outputs, (1, 1000))
-    # _, predicted = torch.max(outputs, 1)
-    # print("--------------------------")
-    # print("res: ")
-    # print(predicted)
-    # print("--------------------------")
+    outputs = next(iter(model.outputs.values())).copyout_numpy()
+    res2 = outputs
+    outputs = torch.tensor(outputs)
+    outputs = torch.reshape(outputs, (1, 1000))
+    _, predicted = torch.max(outputs, 1)
+    print("--------------------------")
+    print("res: ")
+    print(predicted)
+    print("--------------------------")

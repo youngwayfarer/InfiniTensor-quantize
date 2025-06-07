@@ -162,7 +162,7 @@ endif()
 
 # add conv conv3d in CUDA
 if(USE_CUDA)
-  file(GLOB_RECURSE SRC_CUDA src/cuda/*.cc src/cuda/*.cu src/kernels/cuda/conv.cc src/kernels/cuda/unary.cc src/kernels/cuda/unary.cu src/kernels/cuda/element_wise.cc src/kernels/cuda/element_wise.cu src/kernels/cuda/split_concat.cc src/kernels/cuda/split_concat.cu src/kernels/cuda/resize.cu src/kernels/cuda/resize.cc src/kernels/cuda/transpose.cu src/kernels/cuda/transpose.cc src/kernels/cuda/softmax.cu src/kernels/cuda/softmax.cc src/kernels/cuda/pad_slice.cu src/kernels/cuda/pad_slice.cc src/kernels/cuda/gather.cu src/kernels/cuda/gather.cc)
+  file(GLOB_RECURSE SRC_CUDA src/cuda/*.cc src/cuda/*.cu src/kernels/cuda/conv.cc src/kernels/cuda/unary.cc src/kernels/cuda/unary.cu src/kernels/cuda/element_wise.cc src/kernels/cuda/element_wise.cu src/kernels/cuda/split_concat.cc src/kernels/cuda/split_concat.cu src/kernels/cuda/resize.cu src/kernels/cuda/resize.cc src/kernels/cuda/transpose.cu src/kernels/cuda/transpose.cc src/kernels/cuda/softmax.cu src/kernels/cuda/softmax.cc src/kernels/cuda/pad_slice.cu src/kernels/cuda/pad_slice.cc src/kernels/cuda/gather.cu src/kernels/cuda/gather.cc src/kernels/cuda/clip.cu src/kernels/cuda/clip.cc src/kernels/cuda/batch_norm.cc)
   # file(GLOB_RECURSE SRC_CUDA src/cuda/*.cc src/cuda/*.cu src/kernels/cuda/conv.cc)
   list (APPEND SRC ${SRC_CUDA})
 endif()

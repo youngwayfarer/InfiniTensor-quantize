@@ -8,6 +8,7 @@ import json
 import random
 from torchvision import transforms
 from tqdm import tqdm
+import time
 
 with open("../../imagenet/data.json", 'r', encoding='utf-8') as f:
     data = json.load(f)
@@ -40,7 +41,7 @@ for folder in tqdm(folders, desc="Processing folders"):
         continue
     idx = folder2idx[folder]
     imgs = [f for f in os.listdir(folder_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-    sampled_imgs = random.sample(imgs, 5)
+    sampled_imgs = random.sample(imgs, 1)
     for img_name in sampled_imgs:
         img_path = os.path.join(folder_path, img_name)
         # img = Image.open(img_path).resize((224, 224))
@@ -48,9 +49,10 @@ for folder in tqdm(folders, desc="Processing folders"):
         img_tensor = my_preprocess(img)
         img_tensor = np.expand_dims(img_tensor, 0)
         next(iter(model.inputs.values())).copyin_numpy(img_tensor)
+        start = time.perf_counter()
         model.run()
-        time = model.get_time()
-        total_time += time
+        end = time.perf_counter()
+        total_time += (end - start)
         outputs = next(iter(model.outputs.values())).copyout_numpy()
         outputs = torch.tensor(outputs)
         outputs = torch.reshape(outputs, (1, 1000))
@@ -61,6 +63,4 @@ for folder in tqdm(folders, desc="Processing folders"):
         else:
             wrong += 1
 
-print(f"分类正确数目: {correct}")
-print(f"分类错误数目: {wrong}")
 print(f"平均耗时: {total_time / (correct + wrong):.6f} 秒")

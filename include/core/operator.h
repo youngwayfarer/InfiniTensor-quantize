@@ -161,8 +161,8 @@ class OperatorObj : public Object {
         //* test for int6, int7 of activation
         // input_a->setBitsWidth(7);
         // input_a->setBitsWidth(6);
-        // input_a->setBitsWidth(4);
         // input_a->setBitsWidth(5);
+        // input_a->setBitsWidth(4);
     }
     void simulatedInput() {
         //* 这里与真正量化改变图结构时保持一致(setBestConfig)

@@ -158,7 +158,7 @@ void GraphObj::mixed_quantize() {
     int op_num = ops.size();
     for (int i = 0; i < op_num; i++) {
         auto op = ops[i];
-        if (op->getOpType() == OpType::Resize) {
+        if (op->getOpType() == OpType::Resize || op->getOpType() == OpType::BatchNormalization) {
             // only consider: input[0] x
             // input
             auto input = op->getInputs(0);
