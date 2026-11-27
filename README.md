@@ -1,4 +1,20 @@
-# InfiniTensor
+# InfiniMP
+
+InfiniMP adds hardware-aware mixed-precision post-training quantization (PTQ) to [InfiniTensor](https://github.com/InfiniTensor/InfiniTensor). It combines quantization error estimates with measured operator performance to choose precision and transform inference graphs for CUDA and CPU backends.
+
+## What InfiniMP adds
+
+- **Mixed-precision quantization and graph rewriting.** Uses simulated quantization error on weights and activations to guide layer-wise bit-width selection, then integrates quantization and data-type conversions into the compilation and execution flow.
+- **Hardware-aware operator selection.** Uses measured operator runtimes across devices and precisions to decide where lower-precision execution is beneficial.
+- **CUDA and CPU support.** Extends quantized operator coverage on both backends.
+
+## Upstream and license
+
+InfiniMP is based on InfiniTensor and retains its [Apache 2.0 license](LICENSE). The original project description and documentation links follow below.
+
+---
+
+## InfiniTensor
 
 [中文项目简介](/README_CN.md) | Documentation | [中文文档](/docs/INDEX.md)
 

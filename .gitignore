@@ -69,3 +69,6 @@ cudnn_fp32_test
 cudnn_int8_test
 node_analysis.md
 todo.md
+
+# Local operator performance measurements
+/perf.json
